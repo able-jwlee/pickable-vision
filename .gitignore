@@ -1,0 +1,16 @@
+# 검출 결과 이미지 (실행 중 쌓임)
+output/
+
+# 로컬 preview 결과물
+preview.png
+
+# 가상환경
+.venv/
+
+# 파이썬 캐시
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# 테스트 fixture 이미지는 커밋 유지 (통합 테스트에 필요)
+!tests/fixtures/
