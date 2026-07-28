@@ -475,7 +475,7 @@
 
       <div class="slider-row">
         <div class="slider-header">
-          <span class="name">벽 여백 (시각화만)</span>
+          <span class="name">벽 여백</span>
           <span class="value" id="v-edge-margin">40</span>
         </div>
         <input type="range" min="0" max="100" value="40" data-target="v-edge-margin" data-field="edge_margin">
@@ -559,21 +559,8 @@ const el = {
 };
 
 // ============================================================
-// Spec §4.2 매핑 (0~100 → CV raw). 서버 신 필드 도입 전엔 클라이언트에서 매핑.
+// SVG 오버레이 지오메트리 (0~100 → 픽셀). 서버 전송과 무관하게 유지.
 // ============================================================
-function sensitivityToOffset(v) {
-  // 0~50 → -3~+7, 50~100 → +7~+15
-  if (v <= 50) return -3 + (v / 50) * 10;
-  return 7 + ((v - 50) / 50) * 8;
-}
-function minSizeToArea(v) {
-  const r = 1 + Math.pow(v / 100, 2) * 9;
-  return Math.PI * r * r;
-}
-function maxSizeToArea(v) {
-  const r = 10 + (v / 100) * 40;
-  return Math.PI * r * r;
-}
 function minSizeToRadius(v) { return 1 + Math.pow(v / 100, 2) * 9; }
 function maxSizeToRadius(v) { return 10 + (v / 100) * 40; }
 function edgeToMarginPx(v)  { return v * 1.5; }
@@ -715,21 +702,15 @@ function loadUploadedFile(file) {
 // API 호출: POST /detect
 // ============================================================
 function buildPayload() {
-  const sens  = +document.querySelector('[data-field="sensitivity"]').value;
-  const minSz = +document.querySelector('[data-field="min_size"]').value;
-  const maxSz = +document.querySelector('[data-field="max_size"]').value;
-
   const payload = {
-    threshold_offset: Math.round(sensitivityToOffset(sens)),
-    min_area:         minSizeToArea(minSz),
-    max_area:         maxSizeToArea(maxSz),
-    split_touching:   el.splitTouching.checked,
-    pick_top_n:       el.pickAll.checked ? null : +el.pickCount.value,
-    // invert / tophat_kernel / mask_walls / min_circularity 는 서버 default 유지
+    sensitivity:    +document.querySelector('[data-field="sensitivity"]').value,
+    min_size:       +document.querySelector('[data-field="min_size"]').value,
+    max_size:       +document.querySelector('[data-field="max_size"]').value,
+    edge_margin:    +document.querySelector('[data-field="edge_margin"]').value,
+    split_touching: el.splitTouching.checked,
+    pick_top_n:     el.pickAll.checked ? null : +el.pickCount.value,
   };
-
   if (STATE.imageSource === 'sample') {
-    // 서버가 vision/에서 launch됐다고 가정. image_path는 서버 상대경로.
     payload.image_path = 'tests/fixtures/agar_sample.jpg';
   } else {
     payload.image = STATE.imageBase64;
