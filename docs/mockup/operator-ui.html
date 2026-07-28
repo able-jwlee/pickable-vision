@@ -69,6 +69,14 @@
     font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums;
   }
   .stat .value.pick { color: var(--pick); }
+  .stat .value.gt   { color: #60a5fa; }
+  .stat .delta {
+    font-size: 12px; font-variant-numeric: tabular-nums;
+    padding: 2px 6px; border-radius: 4px;
+  }
+  .stat .delta.over  { color: #fca5a5; background: rgba(239,68,68,.15); }
+  .stat .delta.close { color: #86efac; background: rgba(34,197,94,.15); }
+  .stat .delta.under { color: #fbbf24; background: rgba(251,191,36,.15); }
   .preview-image {
     flex: 1;
     padding: 20px;
@@ -282,10 +290,31 @@
   /* Image picker + server config */
   .image-picker {
     display: flex;
-    gap: 8px;
-    margin-bottom: 10px;
+    gap: 6px;
+    margin-bottom: 8px;
   }
   .image-picker button { flex: 1; padding: 8px 10px; font-size: 12px; }
+  .image-picker button.step { flex: 0 0 32px; padding: 8px 0; }
+  .image-picker select {
+    flex: 1;
+    min-width: 0;
+    padding: 8px 8px;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text);
+    font-size: 12px;
+    font-family: inherit;
+  }
+  .image-meta {
+    font-size: 11px;
+    color: var(--muted);
+    line-height: 1.6;
+    margin-bottom: 10px;
+    min-height: 18px;
+  }
+  .image-meta .warn { color: #fbbf24; display: block; }
+  .image-meta .miss { color: #ef4444; display: block; }
   .server-config {
     display: flex;
     align-items: center;
@@ -367,6 +396,12 @@
         <span class="value pick" id="stat-pick">—</span>
         <span class="label">개</span>
       </div>
+      <div class="stat" id="stat-gt-wrap">
+        <span class="label">정답</span>
+        <span class="value gt" id="stat-gt">—</span>
+        <span class="label">개</span>
+        <span class="delta" id="stat-delta" hidden></span>
+      </div>
     </div>
 
     <div class="preview-image">
@@ -433,7 +468,12 @@
     <div class="control-group">
       <h2>이미지</h2>
       <div class="image-picker">
-        <button id="btn-sample">샘플 이미지</button>
+        <button class="step" id="btn-prev" title="이전 샘플">◀</button>
+        <select id="sample-select"></select>
+        <button class="step" id="btn-next" title="다음 샘플">▶</button>
+      </div>
+      <div class="image-meta" id="image-meta"></div>
+      <div class="image-picker">
         <button id="btn-upload">파일 업로드</button>
         <input type="file" id="file-input" accept="image/*" hidden>
       </div>
@@ -513,11 +553,74 @@
 
 <footer>
   기존 서버 필드로 매핑 · 벽 여백 슬라이더는 SVG 시각화만 (백엔드 구현 후 실제 필터에도 반영됨)<br>
-  샘플 이미지 사용 시 서버가 <code>vision/</code>에서 실행 중이어야 <code>tests/fixtures/agar_sample.jpg</code>를 읽음
+  샘플 선택 시 서버로 <code>image_path</code>를 보내므로 서버가 <code>vision/</code>에서 실행 중이어야 함 · 파일 업로드는 base64라 제약 없음<br>
+  <code>sample/</code> 40장은 용량(약 82MB) 때문에 git에 없음 — 없는 환경에서는 맨 위 <code>agar_sample.jpg</code>만 동작
 </footer>
 
 <script>
 'use strict';
+
+// ============================================================
+// 샘플 카탈로그
+//
+// 브라우저는 file:// 에서 디렉터리를 나열할 수 없으므로 목록을 직접 박아둔다.
+// gt = 동반 json의 colonies_number (실제 콜로니 수). null = 미라벨.
+// fixture 1장만 리포에 포함되고, sample/*는 용량(약 82MB) 때문에 git에 없다.
+// ============================================================
+const SAMPLES = [
+  { path: 'tests/fixtures/agar_sample.jpg', group: 'fixture', name: 'agar_sample.jpg', w: 1350, h:  910, classes: '',  gt: null },
+  { path: 'sample/higher-resolution/bright/349.jpg', group: 'bright', name: '349.jpg', w: 3747, h: 4000, classes: 'S.aureus', gt: 99 },
+  { path: 'sample/higher-resolution/bright/356.jpg', group: 'bright', name: '356.jpg', w: 3618, h: 4000, classes: 'P.aeruginosa', gt: 4 },
+  { path: 'sample/higher-resolution/bright/510.jpg', group: 'bright', name: '510.jpg', w: 3680, h: 4000, classes: 'B.subtilis', gt: 69 },
+  { path: 'sample/higher-resolution/bright/518.jpg', group: 'bright', name: '518.jpg', w: 3775, h: 4000, classes: 'S.aureus', gt: 298 },
+  { path: 'sample/higher-resolution/bright/525.jpg', group: 'bright', name: '525.jpg', w: 3814, h: 4000, classes: 'B.subtilis', gt: 83 },
+  { path: 'sample/higher-resolution/bright/734.jpg', group: 'bright', name: '734.jpg', w: 3968, h: 4000, classes: 'E.coli', gt: 54 },
+  { path: 'sample/higher-resolution/bright/735.jpg', group: 'bright', name: '735.jpg', w: 3968, h: 4000, classes: 'E.coli', gt: 74 },
+  { path: 'sample/higher-resolution/bright/736.jpg', group: 'bright', name: '736.jpg', w: 3635, h: 4000, classes: 'P.aeruginosa', gt: 28 },
+  { path: 'sample/higher-resolution/bright/971.jpg', group: 'bright', name: '971.jpg', w: 3677, h: 4000, classes: 'C.albicans', gt: 130 },
+  { path: 'sample/higher-resolution/bright/1399.jpg', group: 'bright', name: '1399.jpg', w: 3790, h: 4000, classes: 'S.aureus', gt: null },
+  { path: 'sample/higher-resolution/dark/4826.jpg', group: 'dark', name: '4826.jpg', w: 3463, h: 4000, classes: 'B.subtilis', gt: 11 },
+  { path: 'sample/higher-resolution/dark/4904.jpg', group: 'dark', name: '4904.jpg', w: 3298, h: 4000, classes: 'B.subtilis', gt: 22 },
+  { path: 'sample/higher-resolution/dark/5206.jpg', group: 'dark', name: '5206.jpg', w: 3457, h: 4000, classes: 'S.aureus', gt: 101 },
+  { path: 'sample/higher-resolution/dark/5207.jpg', group: 'dark', name: '5207.jpg', w: 3463, h: 4000, classes: 'E.coli', gt: 6 },
+  { path: 'sample/higher-resolution/dark/5212.jpg', group: 'dark', name: '5212.jpg', w: 3517, h: 4000, classes: 'C.albicans', gt: 42 },
+  { path: 'sample/higher-resolution/dark/5270.jpg', group: 'dark', name: '5270.jpg', w: 3459, h: 4000, classes: 'B.subtilis', gt: 35 },
+  { path: 'sample/higher-resolution/dark/5271.jpg', group: 'dark', name: '5271.jpg', w: 3295, h: 4000, classes: 'E.coli', gt: 43 },
+  { path: 'sample/higher-resolution/dark/5308.jpg', group: 'dark', name: '5308.jpg', w: 3456, h: 4000, classes: 'S.aureus', gt: 10 },
+  { path: 'sample/higher-resolution/dark/5312.jpg', group: 'dark', name: '5312.jpg', w: 3453, h: 4000, classes: 'E.coli', gt: 25 },
+  { path: 'sample/higher-resolution/dark/8386.jpg', group: 'dark', name: '8386.jpg', w: 3418, h: 4000, classes: 'E.coli,S.aureus', gt: 24 },
+  { path: 'sample/higher-resolution/vague/11761.jpg', group: 'vague', name: '11761.jpg', w: 3276, h: 4000, classes: 'P.aeruginosa,S.aureus', gt: 54 },
+  { path: 'sample/higher-resolution/vague/11764.jpg', group: 'vague', name: '11764.jpg', w: 3392, h: 4000, classes: 'P.aeruginosa,S.aureus', gt: 41 },
+  { path: 'sample/higher-resolution/vague/11773.jpg', group: 'vague', name: '11773.jpg', w: 3234, h: 4000, classes: 'E.coli,S.aureus', gt: 5 },
+  { path: 'sample/higher-resolution/vague/11884.jpg', group: 'vague', name: '11884.jpg', w: 3232, h: 4000, classes: 'E.coli,S.aureus', gt: 31 },
+  { path: 'sample/higher-resolution/vague/11890.jpg', group: 'vague', name: '11890.jpg', w: 3219, h: 4000, classes: 'E.coli', gt: 3 },
+  { path: 'sample/higher-resolution/vague/11924.jpg', group: 'vague', name: '11924.jpg', w: 3382, h: 4000, classes: 'E.coli,S.aureus', gt: 58 },
+  { path: 'sample/higher-resolution/vague/11955.jpg', group: 'vague', name: '11955.jpg', w: 3191, h: 4000, classes: 'E.coli,S.aureus', gt: 4 },
+  { path: 'sample/higher-resolution/vague/12028.jpg', group: 'vague', name: '12028.jpg', w: 3279, h: 4000, classes: 'P.aeruginosa,S.aureus', gt: 41 },
+  { path: 'sample/higher-resolution/vague/12031.jpg', group: 'vague', name: '12031.jpg', w: 3340, h: 4000, classes: 'E.coli,S.aureus', gt: 56 },
+  { path: 'sample/higher-resolution/vague/12033.jpg', group: 'vague', name: '12033.jpg', w: 3392, h: 4000, classes: 'E.coli,S.aureus', gt: 24 },
+  { path: 'sample/lower-resolution/13895.jpg', group: 'lower-res', name: '13895.jpg', w: 2048, h: 2048, classes: 'B.subtilis', gt: 19 },
+  { path: 'sample/lower-resolution/13938.jpg', group: 'lower-res', name: '13938.jpg', w: 2048, h: 2048, classes: 'C.albicans', gt: 32 },
+  { path: 'sample/lower-resolution/14130.jpg', group: 'lower-res', name: '14130.jpg', w: 2048, h: 2048, classes: 'P.aeruginosa,S.aureus', gt: 18 },
+  { path: 'sample/lower-resolution/14380.jpg', group: 'lower-res', name: '14380.jpg', w: 2048, h: 2048, classes: 'B.subtilis', gt: 34 },
+  { path: 'sample/lower-resolution/14410.jpg', group: 'lower-res', name: '14410.jpg', w: 2048, h: 2048, classes: 'E.coli,S.aureus', gt: 37 },
+  { path: 'sample/lower-resolution/14512.jpg', group: 'lower-res', name: '14512.jpg', w: 2048, h: 2048, classes: 'P.aeruginosa', gt: 15 },
+  { path: 'sample/lower-resolution/14581.jpg', group: 'lower-res', name: '14581.jpg', w: 2048, h: 2048, classes: 'E.coli,S.aureus', gt: 125 },
+  { path: 'sample/lower-resolution/14618.jpg', group: 'lower-res', name: '14618.jpg', w: 2048, h: 2048, classes: 'S.aureus', gt: 40 },
+  { path: 'sample/lower-resolution/14627.jpg', group: 'lower-res', name: '14627.jpg', w: 2048, h: 2048, classes: 'P.aeruginosa,S.aureus', gt: 12 },
+  { path: 'sample/lower-resolution/14684.jpg', group: 'lower-res', name: '14684.jpg', w: 2048, h: 2048, classes: 'E.coli', gt: 55 },
+];
+
+const GROUP_LABELS = {
+  'fixture':   '리포 기본 (git 포함)',
+  'bright':    '고해상도 · 밝은 배경',
+  'dark':      '고해상도 · 어두운 배경',
+  'vague':     '고해상도 · 불명확',
+  'lower-res': '저해상도 2048px',
+};
+
+// 이 크기를 넘으면 "기본 파라미터가 안 맞는다" 경고. fixture(1350x910) 기준.
+const HIRES_WARN_PX = 1600;
 
 // ============================================================
 // State
@@ -527,6 +630,8 @@ const STATE = {
   imageBase64: null,          // upload 시 채워짐 (data URI prefix 제외)
   imageWidth: 1350,           // 응답에서 갱신
   imageHeight: 910,
+  sample: SAMPLES[0],         // 'sample' 모드에서 선택된 항목
+  groundTruth: null,          // 현재 이미지의 정답 개수 (없으면 null)
 };
 
 // ============================================================
@@ -545,8 +650,13 @@ const el = {
   errorBox:    document.getElementById('error-box'),
   statTotal:   document.getElementById('stat-total'),
   statPick:    document.getElementById('stat-pick'),
+  statGt:      document.getElementById('stat-gt'),
+  statDelta:   document.getElementById('stat-delta'),
   legendInfo:  document.getElementById('legend-info'),
-  btnSample:   document.getElementById('btn-sample'),
+  sampleSelect: document.getElementById('sample-select'),
+  imageMeta:   document.getElementById('image-meta'),
+  btnPrev:     document.getElementById('btn-prev'),
+  btnNext:     document.getElementById('btn-next'),
   btnUpload:   document.getElementById('btn-upload'),
   fileInput:   document.getElementById('file-input'),
   serverUrl:   document.getElementById('server-url'),
@@ -649,30 +759,116 @@ function showError(msg) {
   el.errorBox.classList.add('active');
   hideLoading();
 }
-function updateStats(total, pickable) {
+function updateStats(total, pickable, elapsedSec) {
   el.statTotal.textContent = total;
   el.statPick.textContent  = pickable;
-  el.legendInfo.textContent = `검출 완료 (${total}개, 피킹 후보 ${pickable}개)`;
+  renderGroundTruth(total);
+  el.legendInfo.textContent =
+    `검출 완료 (${total}개, 피킹 후보 ${pickable}개) · ${elapsedSec.toFixed(1)}초`;
   el.legendInfo.style.color = 'var(--muted)';
 }
 
+/**
+ * 정답 개수와 검출 수의 차이를 표시.
+ * total이 null이면 아직 검출 전이므로 정답만 보여주고 차이는 숨긴다.
+ */
+function renderGroundTruth(total) {
+  const gt = STATE.groundTruth;
+  el.statGt.textContent = gt == null ? '—' : gt;
+
+  if (gt == null || total == null) {
+    el.statDelta.hidden = true;
+    return;
+  }
+  const diff = total - gt;
+  // 정답의 20% 이내면 근접으로 본다.
+  const cls = Math.abs(diff) <= Math.max(2, gt * 0.2) ? 'close'
+            : diff > 0 ? 'over' : 'under';
+  el.statDelta.textContent = diff > 0 ? `+${diff}` : `${diff}`;
+  el.statDelta.className = 'delta ' + cls;
+  el.statDelta.hidden = false;
+}
+
 // ============================================================
-// 이미지 로드
+// 샘플 선택
 // ============================================================
-async function loadSampleImage() {
+function buildSampleSelect() {
+  const frag = document.createDocumentFragment();
+  let currentGroup = null;
+  let optgroup = null;
+
+  SAMPLES.forEach((s, i) => {
+    if (s.group !== currentGroup) {
+      currentGroup = s.group;
+      optgroup = document.createElement('optgroup');
+      optgroup.label = GROUP_LABELS[s.group] || s.group;
+      frag.appendChild(optgroup);
+    }
+    const opt = document.createElement('option');
+    opt.value = String(i);
+    opt.textContent = s.gt == null ? s.name : `${s.name}  (정답 ${s.gt})`;
+    optgroup.appendChild(opt);
+  });
+
+  el.sampleSelect.replaceChildren(frag);
+}
+
+function renderImageMeta(sample, missing) {
+  const parts = [`${sample.w}×${sample.h}`];
+  if (sample.classes) parts.push(sample.classes);
+  parts.push(sample.gt == null ? '정답 미상' : `정답 ${sample.gt}개`);
+
+  let html = parts.join(' · ');
+  if (missing) {
+    html += `<span class="miss">이미지를 찾을 수 없습니다 — <code>sample/</code> 디렉터리가 필요합니다 (git 미포함)</span>`;
+  } else if (Math.max(sample.w, sample.h) > HIRES_WARN_PX) {
+    html += `<span class="warn">고해상도 — 기본 파라미터는 1350×910 기준이라 과검출됩니다. 최소 콜로니 크기를 올려보세요.</span>`;
+  }
+  el.imageMeta.innerHTML = html;
+}
+
+/**
+ * 카탈로그의 index번째 샘플을 미리보기에 로드.
+ * 서버에는 base64가 아니라 sample.path를 그대로 보내므로,
+ * 서버가 vision/ 에서 실행 중이어야 한다.
+ */
+function loadSampleImage(index) {
+  const sample = SAMPLES[index];
   STATE.imageSource = 'sample';
   STATE.imageBase64 = null;
-  el.img.src = '../../tests/fixtures/agar_sample.jpg';
+  STATE.sample      = sample;
+  STATE.groundTruth = sample.gt;
+  el.sampleSelect.value = String(index);
+
   clearColonies();
-  await new Promise(res => {
+  resetStats();
+  renderImageMeta(sample, false);
+
+  return new Promise(resolve => {
     el.img.onload = () => {
-      STATE.imageWidth  = el.img.naturalWidth  || 1350;
-      STATE.imageHeight = el.img.naturalHeight || 910;
+      STATE.imageWidth  = el.img.naturalWidth  || sample.w;
+      STATE.imageHeight = el.img.naturalHeight || sample.h;
       relayoutOverlays();
-      res();
+      el.legendInfo.textContent = `${sample.name} 로드됨 · [적용] 눌러 검출 시작`;
+      resolve();
     };
+    el.img.onerror = () => {
+      // 카탈로그의 치수로 오버레이만 맞춰두고 경고를 띄운다.
+      STATE.imageWidth  = sample.w;
+      STATE.imageHeight = sample.h;
+      relayoutOverlays();
+      renderImageMeta(sample, true);
+      el.legendInfo.textContent = `${sample.name} 로드 실패`;
+      resolve();
+    };
+    el.img.src = '../../' + sample.path;
   });
-  el.legendInfo.textContent = '샘플 이미지 로드됨 · [적용] 눌러 검출 시작';
+}
+
+function stepSample(delta) {
+  const cur  = +el.sampleSelect.value || 0;
+  const next = (cur + delta + SAMPLES.length) % SAMPLES.length;
+  loadSampleImage(next);
 }
 
 function loadUploadedFile(file) {
@@ -683,12 +879,19 @@ function loadUploadedFile(file) {
       const commaIdx = dataUrl.indexOf(',');
       STATE.imageSource = 'upload';
       STATE.imageBase64 = commaIdx >= 0 ? dataUrl.slice(commaIdx + 1) : dataUrl;
+      STATE.groundTruth = null;   // 업로드 이미지는 정답값이 없다
+      el.img.onerror = null;
       el.img.src = dataUrl;
       el.img.onload = () => {
         STATE.imageWidth  = el.img.naturalWidth;
         STATE.imageHeight = el.img.naturalHeight;
         relayoutOverlays();
         clearColonies();
+        resetStats();
+        renderImageMeta(
+          { w: STATE.imageWidth, h: STATE.imageHeight, classes: '', gt: null },
+          false,
+        );
         el.legendInfo.textContent = `${file.name} 로드됨 · [적용] 눌러 검출 시작`;
         resolve();
       };
@@ -696,6 +899,12 @@ function loadUploadedFile(file) {
     reader.onerror = () => reject(new Error('파일을 읽을 수 없습니다'));
     reader.readAsDataURL(file);
   });
+}
+
+function resetStats() {
+  el.statTotal.textContent = '—';
+  el.statPick.textContent  = '—';
+  renderGroundTruth(null);
 }
 
 // ============================================================
@@ -711,7 +920,7 @@ function buildPayload() {
     pick_top_n:     el.pickAll.checked ? null : +el.pickCount.value,
   };
   if (STATE.imageSource === 'sample') {
-    payload.image_path = 'tests/fixtures/agar_sample.jpg';
+    payload.image_path = STATE.sample.path;
   } else {
     payload.image = STATE.imageBase64;
   }
@@ -723,6 +932,7 @@ async function runDetect() {
   clearColonies();
   const server = el.serverUrl.value.trim().replace(/\/$/, '');
   const payload = buildPayload();
+  const startedAt = performance.now();
 
   let resp;
   try {
@@ -758,7 +968,7 @@ async function runDetect() {
 
   renderColonies(data.colonies || []);
   const pickable = (data.colonies || []).filter(c => c.pickable).length;
-  updateStats(data.count, pickable);
+  updateStats(data.count, pickable, (performance.now() - startedAt) / 1000);
 }
 
 // ============================================================
@@ -780,7 +990,9 @@ el.pickAll.addEventListener('change', () => {
   el.pickCount.disabled = el.pickAll.checked;
 });
 
-el.btnSample.addEventListener('click', () => { loadSampleImage(); });
+el.sampleSelect.addEventListener('change', e => loadSampleImage(+e.target.value));
+el.btnPrev.addEventListener('click', () => stepSample(-1));
+el.btnNext.addEventListener('click', () => stepSample(+1));
 el.btnUpload.addEventListener('click', () => el.fileInput.click());
 el.fileInput.addEventListener('change', async e => {
   const f = e.target.files[0];
@@ -825,7 +1037,8 @@ el.btnApply.addEventListener('click', runDetect);
 // 초기화
 // ============================================================
 (async function init() {
-  await loadSampleImage();
+  buildSampleSelect();
+  await loadSampleImage(0);
 })();
 
 </script>
