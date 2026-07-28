@@ -47,6 +47,26 @@ python -m venv .venv
 }
 ```
 
+### 오퍼레이터용 0~100 스케일 필드 (선택)
+
+CV 원본 파라미터 대신 오퍼레이터가 이해하기 쉬운 0~100 슬라이더 값으로도 요청 가능하다. 지정된 필드는 대응하는 raw 필드보다 우선한다.
+
+| 추상 필드 (0~100) | 덮어쓰는 raw 필드 | 기본값 → raw |
+|---|---|---|
+| `sensitivity` | `threshold_offset` | 50 → +7 |
+| `min_size` | `min_area` | 20 → ≈6 |
+| `max_size` | `max_area` | 75 → ≈5027 |
+| `edge_margin` | 벽 여백(px) | 40 → 60 |
+
+응답에는 실제 적용된 raw 값이 `applied_params`에 담겨 되반환된다.
+
+예:
+```jsonc
+{ "image_path": "...", "sensitivity": 65, "min_size": 30, "edge_margin": 50 }
+```
+
+UI 목업(`docs/mockup/operator-ui.html`)에서 이 필드들을 실제로 어떻게 슬라이더로 노출하는지 볼 수 있다.
+
 **이미지 입력 두 방식**
 - `image` (base64): **운영 계약**. UI가 Neon `/api/v1/driver/camera/capture` 응답의 base64를 그대로 전달. 브라우저 흐름에서 유일하게 가능한 방식.
 - `image_path` (로컬 경로): **튜닝 편의용**. 서버와 파일시스템을 공유할 때만 동작(같은 PC). `/docs`에서 base64 붙여넣기 없이 Neon 저장 이미지를 바로 검출. 둘 다 오면 `image_path` 우선.

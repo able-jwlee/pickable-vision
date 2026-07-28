@@ -1,0 +1,994 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>PICKABLE Vision · Operator UI</title>
+<style>
+  :root {
+    --bg: #0f1218;
+    --panel: #171b23;
+    --panel-2: #1f242e;
+    --border: #2a303c;
+    --text: #e6e8ec;
+    --muted: #8b93a3;
+    --accent: #4ade80;
+    --danger: #f87171;
+    --detect: #22c55e;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 24px;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans KR", sans-serif;
+    font-size: 14px;
+    min-height: 100vh;
+  }
+  header {
+    margin-bottom: 16px;
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+  }
+  header h1 {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 600;
+  }
+  header .subtitle { color: var(--muted); font-size: 12px; }
+
+  .layout {
+    display: grid;
+    grid-template-columns: 1fr 380px;
+    gap: 20px;
+    max-width: 1400px;
+    margin: 0 auto;
+  }
+
+  /* Preview panel */
+  .preview {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  .preview-stats {
+    display: flex;
+    gap: 24px;
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--border);
+    background: var(--panel-2);
+  }
+  .stat { display: flex; align-items: baseline; gap: 8px; }
+  .stat .label { color: var(--muted); font-size: 12px; }
+  .stat .value {
+    font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums;
+    color: var(--detect);
+  }
+  .preview-image {
+    flex: 1;
+    padding: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #0a0c11;
+    min-height: 480px;
+    position: relative;
+  }
+  .image-container {
+    position: relative;
+    display: inline-block;
+    max-width: 100%;
+    max-height: 640px;
+  }
+  .image-container img {
+    display: block;
+    max-width: 100%;
+    max-height: 640px;
+    border-radius: 4px;
+  }
+  .overlay {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    pointer-events: none;
+  }
+  .overlay-note {
+    position: absolute;
+    top: 8px; left: 8px;
+    background: rgba(0,0,0,0.6);
+    color: var(--detect);
+    padding: 4px 8px;
+    border-radius: 3px;
+    font-size: 11px;
+    pointer-events: none;
+    line-height: 1.5;
+  }
+  .loading-overlay, .error-overlay {
+    position: absolute;
+    inset: 0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0,0,0,0.6);
+    z-index: 10;
+    border-radius: 4px;
+    font-size: 14px;
+  }
+  .loading-overlay.active, .error-overlay.active { display: flex; }
+  .error-overlay { color: var(--danger); text-align: center; padding: 16px; }
+  .spinner {
+    width: 32px; height: 32px;
+    border: 3px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .legend {
+    display: flex;
+    gap: 20px;
+    padding: 12px 18px;
+    border-top: 1px solid var(--border);
+    background: var(--panel-2);
+    font-size: 12px;
+    color: var(--muted);
+    flex-wrap: wrap;
+  }
+  .legend-item { display: flex; align-items: center; gap: 6px; }
+  .legend-dot {
+    width: 12px; height: 12px;
+    border-radius: 50%;
+    border: 3px solid var(--detect);
+  }
+
+  /* Controls panel */
+  .controls {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+    align-self: start;
+    position: sticky;
+    top: 24px;
+  }
+  .control-group h2 {
+    margin: 0 0 10px 0;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+  }
+  .slider-row { margin-bottom: 18px; }
+  .slider-row:last-child { margin-bottom: 0; }
+  .slider-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 6px;
+  }
+  .slider-header .name { font-size: 14px; font-weight: 500; }
+  .slider-header .value {
+    font-size: 14px;
+    font-variant-numeric: tabular-nums;
+    color: var(--accent);
+    font-weight: 600;
+  }
+  input[type="range"] {
+    width: 100%;
+    -webkit-appearance: none;
+    appearance: none;
+    background: transparent;
+  }
+  input[type="range"]::-webkit-slider-runnable-track {
+    height: 4px; background: var(--border); border-radius: 2px;
+  }
+  input[type="range"]::-moz-range-track {
+    height: 4px; background: var(--border); border-radius: 2px;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 16px; height: 16px;
+    margin-top: -6px;
+    border-radius: 50%;
+    background: var(--accent);
+    cursor: pointer;
+    border: 2px solid var(--panel);
+    box-shadow: 0 0 0 1px var(--accent);
+  }
+  input[type="range"]::-moz-range-thumb {
+    width: 16px; height: 16px;
+    border-radius: 50%;
+    background: var(--accent);
+    cursor: pointer;
+    border: 2px solid var(--panel);
+    box-shadow: 0 0 0 1px var(--accent);
+  }
+  .slider-caption {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 4px;
+    font-size: 11px;
+    color: var(--muted);
+  }
+
+  .toggle-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .switch {
+    position: relative;
+    display: inline-block;
+    width: 40px; height: 22px;
+  }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .slider-btn {
+    position: absolute;
+    cursor: pointer;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: var(--border);
+    border-radius: 22px;
+    transition: 0.2s;
+  }
+  .slider-btn::before {
+    content: "";
+    position: absolute;
+    height: 16px; width: 16px;
+    left: 3px; top: 3px;
+    background: white;
+    border-radius: 50%;
+    transition: 0.2s;
+  }
+  .switch input:checked + .slider-btn { background: var(--accent); }
+  .switch input:checked + .slider-btn::before { transform: translateX(18px); }
+
+  /* Image picker + server config */
+  .image-picker {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 8px;
+  }
+  .image-picker button { flex: 1; padding: 8px 10px; font-size: 12px; }
+  .image-picker button.step { flex: 0 0 32px; padding: 8px 0; }
+  .image-picker select {
+    flex: 1;
+    min-width: 0;
+    padding: 8px 8px;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text);
+    font-size: 12px;
+    font-family: inherit;
+  }
+  .image-meta {
+    font-size: 11px;
+    color: var(--muted);
+    line-height: 1.6;
+    margin-bottom: 10px;
+    min-height: 18px;
+  }
+  .image-meta .warn { color: #fbbf24; display: block; }
+  .image-meta .miss { color: #ef4444; display: block; }
+  .server-config {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .server-config input[type="text"] {
+    flex: 1;
+    padding: 6px 8px;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text);
+    font-size: 12px;
+    font-family: monospace;
+  }
+
+  select.plate-select {
+    width: 100%;
+    padding: 8px;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text);
+    font-family: inherit;
+    font-size: 13px;
+  }
+
+  .button-row {
+    display: flex;
+    gap: 10px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+  }
+  .button-row.stack {
+    display: grid;
+    gap: 10px;
+    grid-template-columns: 1fr 1fr;
+  }
+  button {
+    padding: 10px 14px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--panel-2);
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  button:hover { background: #262b36; }
+  button.primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #06110a;
+    font-weight: 600;
+  }
+  button.primary:hover { background: #6ee79a; }
+  button.wide { grid-column: 1 / -1; }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  footer {
+    margin-top: 24px;
+    text-align: center;
+    color: var(--muted);
+    font-size: 11px;
+  }
+
+  @media (max-width: 900px) {
+    .layout { grid-template-columns: 1fr; }
+    .controls { position: static; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>PICKABLE · 콜로니 검출</h1>
+  <span class="subtitle">Operator UI · connected to <span id="hdr-server">localhost:7780</span></span>
+</header>
+
+<div class="layout">
+
+  <!-- LEFT: preview -->
+  <section class="preview">
+    <div class="preview-stats">
+      <div class="stat">
+        <span class="label">검출 · 피킹 대상</span>
+        <span class="value" id="stat-total">—</span>
+        <span class="label">개</span>
+      </div>
+    </div>
+
+    <div class="preview-image">
+      <div class="image-container">
+        <img id="preview-img" src="../../tests/fixtures/agar_sample.jpg" alt="agar plate">
+
+        <svg id="overlay-svg" class="overlay" viewBox="0 0 1350 910" preserveAspectRatio="none">
+          <!-- 검출된 콜로니는 여기에 동적으로 추가 -->
+          <g id="colonies-group"></g>
+
+          <!-- 벽 여백 -->
+          <rect id="wall-margin-rect" x="60" y="60" width="1230" height="790"
+                fill="none" stroke="#22c55e" stroke-width="4"
+                stroke-dasharray="12,8"/>
+
+          <!-- 크기 참조 원 (예상 콜로니 크기) -->
+          <g id="size-preview">
+            <text id="size-label" x="0" y="0" fill="#facc15" font-size="26"
+                  text-anchor="middle" font-family="sans-serif"
+                  style="paint-order:stroke; stroke:#000; stroke-width:3px;">크기</text>
+            <circle id="size-circle" cx="0" cy="0" r="1.36"
+                    fill="none" stroke="#facc15" stroke-width="3"/>
+          </g>
+        </svg>
+
+        <div class="overlay-note">
+          <div>— — 피킹 안전 여백 (벽 여백 슬라이더)</div>
+          <div style="color:#facc15; margin-top:2px;">○ 최소 콜로니 크기</div>
+        </div>
+
+        <div class="loading-overlay" id="loading">
+          <div style="text-align:center;">
+            <div class="spinner" style="margin: 0 auto 12px;"></div>
+            <div>검출 중...</div>
+          </div>
+        </div>
+        <div class="error-overlay" id="error-box"></div>
+      </div>
+    </div>
+
+    <div class="legend">
+      <div class="legend-item">
+        <span class="legend-dot"></span>
+        <span>검출된 콜로니 (전부 피킹 대상)</span>
+      </div>
+      <div class="legend-item" style="margin-left:auto;">
+        <span id="legend-info" style="color:#666;">— [검출] 눌러 시작</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- RIGHT: controls -->
+  <aside class="controls">
+
+    <div class="control-group">
+      <h2>이미지</h2>
+      <div class="image-picker">
+        <button class="step" id="btn-prev" title="이전 샘플">◀</button>
+        <select id="sample-select"></select>
+        <button class="step" id="btn-next" title="다음 샘플">▶</button>
+      </div>
+      <div class="image-meta" id="image-meta"></div>
+      <div class="image-picker">
+        <button id="btn-upload">파일 업로드</button>
+        <input type="file" id="file-input" accept="image/*" hidden>
+      </div>
+      <div class="server-config">
+        <span>서버:</span>
+        <input type="text" id="server-url" value="http://localhost:7780">
+      </div>
+    </div>
+
+    <div class="control-group">
+      <h2>용기 종류</h2>
+      <select id="plate-type" class="plate-select">
+        <option value="well_8" selected>웰 플레이트 (4×2)</option>
+        <option value="petri">페트리 접시</option>
+      </select>
+      <div class="image-meta" style="margin-top:6px;">
+        페트리는 <code>app/plates/petri.py</code> 구현 후에만 실효.
+        현재는 요청에 실려도 서버가 조용히 무시합니다.
+      </div>
+    </div>
+
+    <div class="control-group">
+      <h2>검출 파라미터</h2>
+
+      <div class="slider-row">
+        <div class="slider-header">
+          <span class="name">감도</span>
+          <span class="value" id="v-sensitivity">50</span>
+        </div>
+        <input type="range" min="0" max="100" value="50" data-target="v-sensitivity" data-field="sensitivity">
+        <div class="slider-caption"><span>← 엄격</span><span>민감 →</span></div>
+      </div>
+
+      <div class="slider-row">
+        <div class="slider-header">
+          <span class="name">콜로니 크기 (최소)</span>
+          <span class="value" id="v-size">20</span>
+        </div>
+        <input type="range" min="0" max="100" value="20" data-target="v-size" data-field="size">
+        <div class="slider-caption"><span>← 관대 (작은 것도 검출)</span><span>엄격 →</span></div>
+      </div>
+
+      <div class="slider-row">
+        <div class="slider-header">
+          <span class="name">벽 여백</span>
+          <span class="value" id="v-edge-margin">40</span>
+        </div>
+        <input type="range" min="0" max="100" value="40" data-target="v-edge-margin" data-field="edge_margin">
+        <div class="slider-caption"><span>← 벽 근처 허용</span><span>안쪽만 →</span></div>
+      </div>
+
+      <div class="slider-row toggle-row">
+        <span class="name">붙은 콜로니 나누기</span>
+        <label class="switch">
+          <input type="checkbox" id="split-touching" checked>
+          <span class="slider-btn"></span>
+        </label>
+      </div>
+    </div>
+
+    <div class="button-row stack">
+      <button id="btn-reset">기본값으로</button>
+      <button id="btn-apply">검출</button>
+      <button class="primary wide" id="btn-send" disabled>로봇에 전송 (좌표 N개)</button>
+    </div>
+
+  </aside>
+
+</div>
+
+<footer>
+  기존 서버 필드로 매핑 · 벽 여백 슬라이더는 SVG 시각화만 (백엔드 구현 후 실제 필터에도 반영됨)<br>
+  샘플 선택 시 서버로 <code>image_path</code>를 보내므로 서버가 <code>vision/</code>에서 실행 중이어야 함 · 파일 업로드는 base64라 제약 없음<br>
+  <code>sample/</code> 40장은 용량(약 82MB) 때문에 git에 없음 — 없는 환경에서는 맨 위 <code>agar_sample.jpg</code>만 동작<br>
+  <b>로봇 전송</b>은 목업 — 실제 로봇 연동은 이 UI 밖입니다. 검출된 좌표 전체를 콘솔에 요약합니다.
+</footer>
+
+<script>
+'use strict';
+
+// ============================================================
+// 샘플 카탈로그
+//
+// 브라우저는 file:// 에서 디렉터리를 나열할 수 없으므로 목록을 직접 박아둔다.
+// gt = 동반 json의 colonies_number (참고용, UI 에는 표시 안 함).
+// fixture 1장만 리포에 포함되고, sample/*는 용량(약 82MB) 때문에 git에 없다.
+// ============================================================
+const SAMPLES = [
+  { path: 'tests/fixtures/agar_sample.jpg', group: 'fixture', name: 'agar_sample.jpg', w: 1350, h:  910, classes: '',  gt: null },
+  { path: 'sample/higher-resolution/bright/349.jpg', group: 'bright', name: '349.jpg', w: 3747, h: 4000, classes: 'S.aureus', gt: 99 },
+  { path: 'sample/higher-resolution/bright/356.jpg', group: 'bright', name: '356.jpg', w: 3618, h: 4000, classes: 'P.aeruginosa', gt: 4 },
+  { path: 'sample/higher-resolution/bright/510.jpg', group: 'bright', name: '510.jpg', w: 3680, h: 4000, classes: 'B.subtilis', gt: 69 },
+  { path: 'sample/higher-resolution/bright/518.jpg', group: 'bright', name: '518.jpg', w: 3775, h: 4000, classes: 'S.aureus', gt: 298 },
+  { path: 'sample/higher-resolution/bright/525.jpg', group: 'bright', name: '525.jpg', w: 3814, h: 4000, classes: 'B.subtilis', gt: 83 },
+  { path: 'sample/higher-resolution/bright/734.jpg', group: 'bright', name: '734.jpg', w: 3968, h: 4000, classes: 'E.coli', gt: 54 },
+  { path: 'sample/higher-resolution/bright/735.jpg', group: 'bright', name: '735.jpg', w: 3968, h: 4000, classes: 'E.coli', gt: 74 },
+  { path: 'sample/higher-resolution/bright/736.jpg', group: 'bright', name: '736.jpg', w: 3635, h: 4000, classes: 'P.aeruginosa', gt: 28 },
+  { path: 'sample/higher-resolution/bright/971.jpg', group: 'bright', name: '971.jpg', w: 3677, h: 4000, classes: 'C.albicans', gt: 130 },
+  { path: 'sample/higher-resolution/bright/1399.jpg', group: 'bright', name: '1399.jpg', w: 3790, h: 4000, classes: 'S.aureus', gt: null },
+  { path: 'sample/higher-resolution/dark/4826.jpg', group: 'dark', name: '4826.jpg', w: 3463, h: 4000, classes: 'B.subtilis', gt: 11 },
+  { path: 'sample/higher-resolution/dark/4904.jpg', group: 'dark', name: '4904.jpg', w: 3298, h: 4000, classes: 'B.subtilis', gt: 22 },
+  { path: 'sample/higher-resolution/dark/5206.jpg', group: 'dark', name: '5206.jpg', w: 3457, h: 4000, classes: 'S.aureus', gt: 101 },
+  { path: 'sample/higher-resolution/dark/5207.jpg', group: 'dark', name: '5207.jpg', w: 3463, h: 4000, classes: 'E.coli', gt: 6 },
+  { path: 'sample/higher-resolution/dark/5212.jpg', group: 'dark', name: '5212.jpg', w: 3517, h: 4000, classes: 'C.albicans', gt: 42 },
+  { path: 'sample/higher-resolution/dark/5270.jpg', group: 'dark', name: '5270.jpg', w: 3459, h: 4000, classes: 'B.subtilis', gt: 35 },
+  { path: 'sample/higher-resolution/dark/5271.jpg', group: 'dark', name: '5271.jpg', w: 3295, h: 4000, classes: 'E.coli', gt: 43 },
+  { path: 'sample/higher-resolution/dark/5308.jpg', group: 'dark', name: '5308.jpg', w: 3456, h: 4000, classes: 'S.aureus', gt: 10 },
+  { path: 'sample/higher-resolution/dark/5312.jpg', group: 'dark', name: '5312.jpg', w: 3453, h: 4000, classes: 'E.coli', gt: 25 },
+  { path: 'sample/higher-resolution/dark/8386.jpg', group: 'dark', name: '8386.jpg', w: 3418, h: 4000, classes: 'E.coli,S.aureus', gt: 24 },
+  { path: 'sample/higher-resolution/vague/11761.jpg', group: 'vague', name: '11761.jpg', w: 3276, h: 4000, classes: 'P.aeruginosa,S.aureus', gt: 54 },
+  { path: 'sample/higher-resolution/vague/11764.jpg', group: 'vague', name: '11764.jpg', w: 3392, h: 4000, classes: 'P.aeruginosa,S.aureus', gt: 41 },
+  { path: 'sample/higher-resolution/vague/11773.jpg', group: 'vague', name: '11773.jpg', w: 3234, h: 4000, classes: 'E.coli,S.aureus', gt: 5 },
+  { path: 'sample/higher-resolution/vague/11884.jpg', group: 'vague', name: '11884.jpg', w: 3232, h: 4000, classes: 'E.coli,S.aureus', gt: 31 },
+  { path: 'sample/higher-resolution/vague/11890.jpg', group: 'vague', name: '11890.jpg', w: 3219, h: 4000, classes: 'E.coli', gt: 3 },
+  { path: 'sample/higher-resolution/vague/11924.jpg', group: 'vague', name: '11924.jpg', w: 3382, h: 4000, classes: 'E.coli,S.aureus', gt: 58 },
+  { path: 'sample/higher-resolution/vague/11955.jpg', group: 'vague', name: '11955.jpg', w: 3191, h: 4000, classes: 'E.coli,S.aureus', gt: 4 },
+  { path: 'sample/higher-resolution/vague/12028.jpg', group: 'vague', name: '12028.jpg', w: 3279, h: 4000, classes: 'P.aeruginosa,S.aureus', gt: 41 },
+  { path: 'sample/higher-resolution/vague/12031.jpg', group: 'vague', name: '12031.jpg', w: 3340, h: 4000, classes: 'E.coli,S.aureus', gt: 56 },
+  { path: 'sample/higher-resolution/vague/12033.jpg', group: 'vague', name: '12033.jpg', w: 3392, h: 4000, classes: 'E.coli,S.aureus', gt: 24 },
+  { path: 'sample/lower-resolution/13895.jpg', group: 'lower-res', name: '13895.jpg', w: 2048, h: 2048, classes: 'B.subtilis', gt: 19 },
+  { path: 'sample/lower-resolution/13938.jpg', group: 'lower-res', name: '13938.jpg', w: 2048, h: 2048, classes: 'C.albicans', gt: 32 },
+  { path: 'sample/lower-resolution/14130.jpg', group: 'lower-res', name: '14130.jpg', w: 2048, h: 2048, classes: 'P.aeruginosa,S.aureus', gt: 18 },
+  { path: 'sample/lower-resolution/14380.jpg', group: 'lower-res', name: '14380.jpg', w: 2048, h: 2048, classes: 'B.subtilis', gt: 34 },
+  { path: 'sample/lower-resolution/14410.jpg', group: 'lower-res', name: '14410.jpg', w: 2048, h: 2048, classes: 'E.coli,S.aureus', gt: 37 },
+  { path: 'sample/lower-resolution/14512.jpg', group: 'lower-res', name: '14512.jpg', w: 2048, h: 2048, classes: 'P.aeruginosa', gt: 15 },
+  { path: 'sample/lower-resolution/14581.jpg', group: 'lower-res', name: '14581.jpg', w: 2048, h: 2048, classes: 'E.coli,S.aureus', gt: 125 },
+  { path: 'sample/lower-resolution/14618.jpg', group: 'lower-res', name: '14618.jpg', w: 2048, h: 2048, classes: 'S.aureus', gt: 40 },
+  { path: 'sample/lower-resolution/14627.jpg', group: 'lower-res', name: '14627.jpg', w: 2048, h: 2048, classes: 'P.aeruginosa,S.aureus', gt: 12 },
+  { path: 'sample/lower-resolution/14684.jpg', group: 'lower-res', name: '14684.jpg', w: 2048, h: 2048, classes: 'E.coli', gt: 55 },
+];
+
+const GROUP_LABELS = {
+  'fixture':   '리포 기본 (git 포함)',
+  'bright':    '고해상도 · 밝은 배경',
+  'dark':      '고해상도 · 어두운 배경',
+  'vague':     '고해상도 · 불명확',
+  'lower-res': '저해상도 2048px',
+};
+
+// 이 크기를 넘으면 "기본 파라미터가 안 맞는다" 경고. fixture(1350x910) 기준.
+const HIRES_WARN_PX = 1600;
+
+// 슬라이더 기본값 (reset 이 참조)
+const DEFAULTS = {
+  sensitivity: 50,
+  size:        20,
+  edge_margin: 40,
+  split_touching: true,
+  plate_type: 'well_8',
+};
+
+// ============================================================
+// State
+// ============================================================
+const STATE = {
+  imageSource: 'sample',      // 'sample' | 'upload'
+  imageBase64: null,          // upload 시 채워짐 (data URI prefix 제외)
+  imageWidth: 1350,           // 응답에서 갱신
+  imageHeight: 910,
+  sample: SAMPLES[0],         // 'sample' 모드에서 선택된 항목
+  colonies: [],               // 마지막 검출 결과 (로봇 전송 버튼이 참조)
+};
+
+// ============================================================
+// DOM refs
+// ============================================================
+const el = {
+  img:         document.getElementById('preview-img'),
+  svg:         document.getElementById('overlay-svg'),
+  wallRect:    document.getElementById('wall-margin-rect'),
+  sizeCircle:  document.getElementById('size-circle'),
+  sizeLabel:   document.getElementById('size-label'),
+  coloniesG:   document.getElementById('colonies-group'),
+  loading:     document.getElementById('loading'),
+  errorBox:    document.getElementById('error-box'),
+  statTotal:   document.getElementById('stat-total'),
+  legendInfo:  document.getElementById('legend-info'),
+  sampleSelect: document.getElementById('sample-select'),
+  imageMeta:   document.getElementById('image-meta'),
+  btnPrev:     document.getElementById('btn-prev'),
+  btnNext:     document.getElementById('btn-next'),
+  btnUpload:   document.getElementById('btn-upload'),
+  fileInput:   document.getElementById('file-input'),
+  serverUrl:   document.getElementById('server-url'),
+  hdrServer:   document.getElementById('hdr-server'),
+  btnReset:    document.getElementById('btn-reset'),
+  btnApply:    document.getElementById('btn-apply'),
+  btnSend:     document.getElementById('btn-send'),
+  splitTouching: document.getElementById('split-touching'),
+  plateType:   document.getElementById('plate-type'),
+};
+
+// ============================================================
+// 크기 슬라이더 → 백엔드 min_size/max_size 매핑
+//
+// UI 는 크기 슬라이더 1개만 노출한다. 그러나 백엔드 스펙 (§4.2, operator params) 은
+// min_size / max_size 두 필드를 받는다. 아래 함수가 하나의 값을 두 값으로 벌려준다.
+//
+//   min_size = V                        (슬라이더 값 그대로 = "이보다 작으면 무시")
+//   max_size = clamp(V + 55, 75, 100)   (여유롭게 상한을 넉넉히 두되 기본값 유지)
+//
+// 기본값 V=20 일 때 min=20, max=75 → 기존 UI 의 두-슬라이더 기본값과 정확히 동일.
+// 슬라이더가 위로 올라가면 큰 콜로니 위주로만 걸러진다.
+// ============================================================
+function sizeSliderToBackend(v) {
+  return { min_size: v, max_size: Math.min(100, Math.max(v + 55, 75)) };
+}
+function sizeSliderToRadius(v) { return 1 + Math.pow(v / 100, 2) * 9; }
+function edgeToMarginPx(v)     { return v * 1.5; }
+
+// ============================================================
+// 오버레이 갱신
+// ============================================================
+function updateWallMarginRect(sliderVal) {
+  const px = edgeToMarginPx(sliderVal);
+  el.wallRect.setAttribute('x', px);
+  el.wallRect.setAttribute('y', px);
+  el.wallRect.setAttribute('width',  Math.max(0, STATE.imageWidth  - 2 * px));
+  el.wallRect.setAttribute('height', Math.max(0, STATE.imageHeight - 2 * px));
+}
+
+function updateSizeCircle(sliderVal) {
+  el.sizeCircle.setAttribute('r', sizeSliderToRadius(sliderVal));
+}
+
+/**
+ * 이미지 크기 변경 시 SVG viewBox와 오버레이 참조점을 재배치.
+ * 크기 참조 원과 라벨을 이미지 상단 좌측 코너에 놓는다.
+ */
+function relayoutOverlays() {
+  const w = STATE.imageWidth, h = STATE.imageHeight;
+  el.svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+
+  const cx = w * 0.10;
+  const cy = h * 0.22;
+  el.sizeCircle.setAttribute('cx', cx);
+  el.sizeCircle.setAttribute('cy', cy);
+  el.sizeLabel.setAttribute('x', cx);
+  el.sizeLabel.setAttribute('y', cy - 55);
+
+  // 벽 여백 재계산 (현재 슬라이더 값 기준)
+  updateWallMarginRect(+document.querySelector('[data-field="edge_margin"]').value);
+}
+
+// ============================================================
+// 콜로니 렌더링 (서버 응답 → SVG 원)
+//
+// 정책: pickable 여부와 무관하게 전부 초록 원으로 그린다.
+// 이 UI 에서는 "검출된 것 = 피킹 대상" 이므로 색깔로 구분할 이유가 없다.
+// ============================================================
+function renderColonies(colonies) {
+  const frag = document.createDocumentFragment();
+  for (const c of colonies) {
+    const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    circle.setAttribute('cx', c.x);
+    circle.setAttribute('cy', c.y);
+    circle.setAttribute('r', Math.max(c.radius, 3));
+    circle.setAttribute('fill', 'none');
+    circle.setAttribute('stroke', '#22c55e');
+    circle.setAttribute('stroke-width', '4');
+    frag.appendChild(circle);
+  }
+  el.coloniesG.replaceChildren(frag);
+}
+function clearColonies() { el.coloniesG.replaceChildren(); }
+
+// ============================================================
+// 상태 표시 (loading / error / stats)
+// ============================================================
+function showLoading() {
+  el.loading.classList.add('active');
+  el.errorBox.classList.remove('active');
+  el.btnApply.disabled = true;
+}
+function hideLoading() {
+  el.loading.classList.remove('active');
+  el.btnApply.disabled = false;
+}
+function showError(msg) {
+  el.errorBox.textContent = '⚠ ' + msg;
+  el.errorBox.classList.add('active');
+  hideLoading();
+  setSendButton(0, false);
+}
+function updateStats(total, elapsedSec) {
+  el.statTotal.textContent = total;
+  el.legendInfo.textContent = `검출 완료 (${total}개) · ${elapsedSec.toFixed(1)}초`;
+  el.legendInfo.style.color = 'var(--muted)';
+}
+function setSendButton(count, enabled) {
+  el.btnSend.textContent = `로봇에 전송 (좌표 ${count}개)`;
+  el.btnSend.disabled = !enabled;
+}
+
+// ============================================================
+// 샘플 선택
+// ============================================================
+function buildSampleSelect() {
+  const frag = document.createDocumentFragment();
+  let currentGroup = null;
+  let optgroup = null;
+
+  SAMPLES.forEach((s, i) => {
+    if (s.group !== currentGroup) {
+      currentGroup = s.group;
+      optgroup = document.createElement('optgroup');
+      optgroup.label = GROUP_LABELS[s.group] || s.group;
+      frag.appendChild(optgroup);
+    }
+    const opt = document.createElement('option');
+    opt.value = String(i);
+    opt.textContent = s.name;
+    optgroup.appendChild(opt);
+  });
+
+  el.sampleSelect.replaceChildren(frag);
+}
+
+function renderImageMeta(sample, missing) {
+  const parts = [`${sample.w}×${sample.h}`];
+  if (sample.classes) parts.push(sample.classes);
+
+  let html = parts.join(' · ');
+  if (missing) {
+    html += `<span class="miss">이미지를 찾을 수 없습니다 — <code>sample/</code> 디렉터리가 필요합니다 (git 미포함)</span>`;
+  } else if (Math.max(sample.w, sample.h) > HIRES_WARN_PX) {
+    html += `<span class="warn">고해상도 — 기본 파라미터는 1350×910 기준이라 과검출됩니다. 콜로니 크기를 올려보세요.</span>`;
+  }
+  el.imageMeta.innerHTML = html;
+}
+
+/**
+ * 카탈로그의 index번째 샘플을 미리보기에 로드.
+ * 서버에는 base64가 아니라 sample.path를 그대로 보내므로,
+ * 서버가 vision/ 에서 실행 중이어야 한다.
+ */
+function loadSampleImage(index) {
+  const sample = SAMPLES[index];
+  STATE.imageSource = 'sample';
+  STATE.imageBase64 = null;
+  STATE.sample      = sample;
+  el.sampleSelect.value = String(index);
+
+  clearColonies();
+  resetStats();
+  renderImageMeta(sample, false);
+
+  return new Promise(resolve => {
+    el.img.onload = () => {
+      STATE.imageWidth  = el.img.naturalWidth  || sample.w;
+      STATE.imageHeight = el.img.naturalHeight || sample.h;
+      relayoutOverlays();
+      el.legendInfo.textContent = `${sample.name} 로드됨 · [검출] 눌러 시작`;
+      resolve();
+    };
+    el.img.onerror = () => {
+      STATE.imageWidth  = sample.w;
+      STATE.imageHeight = sample.h;
+      relayoutOverlays();
+      renderImageMeta(sample, true);
+      el.legendInfo.textContent = `${sample.name} 로드 실패`;
+      resolve();
+    };
+    el.img.src = '../../' + sample.path;
+  });
+}
+
+function stepSample(delta) {
+  const cur  = +el.sampleSelect.value || 0;
+  const next = (cur + delta + SAMPLES.length) % SAMPLES.length;
+  loadSampleImage(next);
+}
+
+function loadUploadedFile(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result;
+      const commaIdx = dataUrl.indexOf(',');
+      STATE.imageSource = 'upload';
+      STATE.imageBase64 = commaIdx >= 0 ? dataUrl.slice(commaIdx + 1) : dataUrl;
+      el.img.onerror = null;
+      el.img.src = dataUrl;
+      el.img.onload = () => {
+        STATE.imageWidth  = el.img.naturalWidth;
+        STATE.imageHeight = el.img.naturalHeight;
+        relayoutOverlays();
+        clearColonies();
+        resetStats();
+        renderImageMeta(
+          { w: STATE.imageWidth, h: STATE.imageHeight, classes: '' },
+          false,
+        );
+        el.legendInfo.textContent = `${file.name} 로드됨 · [검출] 눌러 시작`;
+        resolve();
+      };
+    };
+    reader.onerror = () => reject(new Error('파일을 읽을 수 없습니다'));
+    reader.readAsDataURL(file);
+  });
+}
+
+function resetStats() {
+  el.statTotal.textContent = '—';
+  STATE.colonies = [];
+  setSendButton(0, false);
+}
+
+// ============================================================
+// API 호출: POST /detect
+// ============================================================
+function buildPayload() {
+  const sizeV = +document.querySelector('[data-field="size"]').value;
+  const { min_size, max_size } = sizeSliderToBackend(sizeV);
+  const payload = {
+    sensitivity:    +document.querySelector('[data-field="sensitivity"]').value,
+    min_size,
+    max_size,
+    edge_margin:    +document.querySelector('[data-field="edge_margin"]').value,
+    split_touching: el.splitTouching.checked,
+    // plate_type 은 §5 백엔드(app/plates/*) 구현 후에만 실효.
+    // 그 전까지 서버는 Pydantic extra='ignore' 로 무시.
+    plate_type:     el.plateType.value,
+  };
+  if (STATE.imageSource === 'sample') {
+    payload.image_path = STATE.sample.path;
+  } else {
+    payload.image = STATE.imageBase64;
+  }
+  return payload;
+}
+
+async function runDetect() {
+  showLoading();
+  clearColonies();
+  setSendButton(0, false);
+  const server = el.serverUrl.value.trim().replace(/\/$/, '');
+  const payload = buildPayload();
+  const startedAt = performance.now();
+
+  let resp;
+  try {
+    resp = await fetch(`${server}/detect`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+  } catch (e) {
+    showError(`서버에 연결할 수 없습니다 (${server}). 서버가 실행 중인지 확인.`);
+    return;
+  }
+
+  if (!resp.ok) {
+    let detail = `HTTP ${resp.status}`;
+    try {
+      const err = await resp.json();
+      if (err.detail) detail = typeof err.detail === 'string'
+        ? err.detail
+        : JSON.stringify(err.detail);
+    } catch {}
+    showError(`검출 실패: ${detail}`);
+    return;
+  }
+
+  const data = await resp.json();
+  hideLoading();
+
+  STATE.imageWidth  = data.width  || STATE.imageWidth;
+  STATE.imageHeight = data.height || STATE.imageHeight;
+  relayoutOverlays();
+
+  const colonies = data.colonies || [];
+  STATE.colonies = colonies;
+  renderColonies(colonies);
+  updateStats(data.count, (performance.now() - startedAt) / 1000);
+  setSendButton(colonies.length, colonies.length > 0);
+}
+
+/**
+ * 로봇 전송 목업.
+ * 실제 로봇 통합은 이 UI 밖 — 여기서는 좌표 요약을 콘솔에 찍고 알림만.
+ */
+function sendToRobot() {
+  const cs = STATE.colonies;
+  if (!cs.length) return;
+  const coords = cs.map(c => ({ x: Math.round(c.x), y: Math.round(c.y), r: Math.round(c.radius) }));
+  console.log(`[MOCKUP] 로봇 전송 좌표 ${coords.length}개:`, coords);
+  alert(`로봇에 좌표 ${coords.length}개 전송 (목업).\n` +
+        `처음 3개: ${coords.slice(0,3).map(c => `(${c.x},${c.y})`).join(', ')}\n` +
+        `콘솔에 전체 목록이 있습니다.`);
+}
+
+// ============================================================
+// 이벤트 바인딩
+// ============================================================
+document.querySelectorAll('input[type="range"]').forEach(input => {
+  input.addEventListener('input', e => {
+    const target = document.getElementById(e.target.dataset.target);
+    if (target) target.textContent = e.target.value;
+    const field = e.target.dataset.field;
+    const val = +e.target.value;
+    if (field === 'edge_margin') updateWallMarginRect(val);
+    if (field === 'size')        updateSizeCircle(val);
+  });
+});
+
+el.sampleSelect.addEventListener('change', e => loadSampleImage(+e.target.value));
+el.btnPrev.addEventListener('click', () => stepSample(-1));
+el.btnNext.addEventListener('click', () => stepSample(+1));
+el.btnUpload.addEventListener('click', () => el.fileInput.click());
+el.fileInput.addEventListener('change', async e => {
+  const f = e.target.files[0];
+  if (!f) return;
+  try { await loadUploadedFile(f); }
+  catch (err) { showError(err.message); }
+  e.target.value = '';   // 같은 파일 재선택 허용
+});
+
+el.serverUrl.addEventListener('input', () => {
+  el.hdrServer.textContent = el.serverUrl.value
+    .replace(/^https?:\/\//, '')
+    .replace(/\/$/, '');
+});
+
+el.btnReset.addEventListener('click', () => {
+  const map = {
+    'v-sensitivity': DEFAULTS.sensitivity,
+    'v-size':        DEFAULTS.size,
+    'v-edge-margin': DEFAULTS.edge_margin,
+  };
+  document.querySelectorAll('input[type="range"]').forEach(input => {
+    const k = input.dataset.target;
+    if (k in map) {
+      input.value = map[k];
+      document.getElementById(k).textContent = map[k];
+    }
+  });
+  el.splitTouching.checked = DEFAULTS.split_touching;
+  el.plateType.value       = DEFAULTS.plate_type;
+  updateWallMarginRect(DEFAULTS.edge_margin);
+  updateSizeCircle(DEFAULTS.size);
+});
+
+el.btnApply.addEventListener('click', runDetect);
+el.btnSend.addEventListener('click', sendToRobot);
+
+// ============================================================
+// 초기화
+// ============================================================
+(async function init() {
+  buildSampleSelect();
+  await loadSampleImage(0);
+})();
+
+</script>
+</body>
+</html>

@@ -100,3 +100,15 @@
 | `max_area` | `v > 0` |
 | (교차) | `min_area < max_area` |
 | (소스) | `image` 또는 `image_path` 중 하나 필수 |
+
+---
+
+## 오퍼레이터용 파라미터 (0~100 스케일)
+
+로봇 오퍼레이터를 위해 CV 원본 파라미터의 사용성을 다듬은 4개 슬라이더 값. `POST /detect`/`POST /detect/preview`에 `sensitivity`, `min_size`, `max_size`, `edge_margin` (모두 `int`, 0~100, 선택) 필드로 전달한다.
+
+지정된 필드는 대응 raw 필드를 덮어쓴다. 미지정이면 기존 raw 필드 또는 config 상수를 그대로 사용해 backwards compat이 유지된다. 매핑은 `app/param_mapping.py`에서 pure function으로 구현되어 있으며, 프론트엔드가 참조 구현이 필요하면 그대로 포팅할 수 있다.
+
+응답의 `applied_params` dict에 실제 사용된 raw 값이 담긴다 — 튜닝 로그·재현·이슈 리포트 용도.
+
+설계 근거·매핑 상세: `docs/superpowers/specs/2026-07-28-operator-parameters-design.md`.
