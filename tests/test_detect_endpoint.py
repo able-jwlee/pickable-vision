@@ -61,3 +61,21 @@ def test_detect_invalid_tophat_kernel_returns_422():
         "/detect", json={"image": _synthetic_b64(), "tophat_kernel": 1}
     )
     assert resp.status_code == 422
+
+
+def test_detect_returns_applied_params():
+    resp = client.post(
+        "/detect",
+        json={"image": _synthetic_b64(), "min_area": 50, "mask_walls": False},
+    )
+    body = resp.json()
+    assert "applied_params" in body
+    ap = body["applied_params"]
+    # raw 필드 그대로 반영되는지 확인
+    assert ap["min_area"] == 50
+    # 요청에 없던 값은 서버 default가 담김
+    assert "threshold_offset" in ap
+    assert "max_area" in ap
+    assert "pick_edge_margin" in ap
+    assert "split_touching" in ap
+    assert "pick_top_n" in ap

@@ -77,6 +77,8 @@ class DetectResponse(BaseModel):
     colonies: list[Colony]
     # save_annotated=true일 때 저장된 이미지 경로, 아니면 null
     annotated_path: str | None = None
+    # 검출에 실제 적용된 raw 파라미터 dict (튜닝 재현·이슈 리포트용)
+    applied_params: dict = {}
 
 
 class PreviewResponse(BaseModel):

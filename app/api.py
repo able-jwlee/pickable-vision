@@ -92,6 +92,14 @@ def detect_colonies(req: DetectRequest) -> DetectResponse:
         count=len(colonies),
         colonies=colonies,
         annotated_path=annotated_path,
+        applied_params={
+            "threshold_offset": req.threshold_offset,
+            "min_area": req.min_area,
+            "max_area": req.max_area,
+            "pick_edge_margin": config.PICK_EDGE_MARGIN,
+            "split_touching": req.split_touching,
+            "pick_top_n": req.pick_top_n,
+        },
     )
 
 
