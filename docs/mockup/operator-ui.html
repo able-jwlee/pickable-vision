@@ -1,0 +1,852 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>PICKABLE Vision · Operator UI</title>
+<style>
+  :root {
+    --bg: #0f1218;
+    --panel: #171b23;
+    --panel-2: #1f242e;
+    --border: #2a303c;
+    --text: #e6e8ec;
+    --muted: #8b93a3;
+    --accent: #4ade80;
+    --danger: #f87171;
+    --detect: #ef4444;
+    --pick: #22c55e;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 24px;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans KR", sans-serif;
+    font-size: 14px;
+    min-height: 100vh;
+  }
+  header {
+    margin-bottom: 16px;
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+  }
+  header h1 {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 600;
+  }
+  header .subtitle { color: var(--muted); font-size: 12px; }
+
+  .layout {
+    display: grid;
+    grid-template-columns: 1fr 380px;
+    gap: 20px;
+    max-width: 1400px;
+    margin: 0 auto;
+  }
+
+  /* Preview panel */
+  .preview {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  .preview-stats {
+    display: flex;
+    gap: 24px;
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--border);
+    background: var(--panel-2);
+  }
+  .stat { display: flex; align-items: baseline; gap: 8px; }
+  .stat .label { color: var(--muted); font-size: 12px; }
+  .stat .value {
+    font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums;
+  }
+  .stat .value.pick { color: var(--pick); }
+  .preview-image {
+    flex: 1;
+    padding: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #0a0c11;
+    min-height: 480px;
+    position: relative;
+  }
+  .image-container {
+    position: relative;
+    display: inline-block;
+    max-width: 100%;
+    max-height: 640px;
+  }
+  .image-container img {
+    display: block;
+    max-width: 100%;
+    max-height: 640px;
+    border-radius: 4px;
+  }
+  .overlay {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    pointer-events: none;
+  }
+  .overlay-note {
+    position: absolute;
+    top: 8px; left: 8px;
+    background: rgba(0,0,0,0.6);
+    color: var(--pick);
+    padding: 4px 8px;
+    border-radius: 3px;
+    font-size: 11px;
+    pointer-events: none;
+    line-height: 1.5;
+  }
+  .loading-overlay, .error-overlay {
+    position: absolute;
+    inset: 0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0,0,0,0.6);
+    z-index: 10;
+    border-radius: 4px;
+    font-size: 14px;
+  }
+  .loading-overlay.active, .error-overlay.active { display: flex; }
+  .error-overlay { color: var(--danger); text-align: center; padding: 16px; }
+  .spinner {
+    width: 32px; height: 32px;
+    border: 3px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .legend {
+    display: flex;
+    gap: 20px;
+    padding: 12px 18px;
+    border-top: 1px solid var(--border);
+    background: var(--panel-2);
+    font-size: 12px;
+    color: var(--muted);
+    flex-wrap: wrap;
+  }
+  .legend-item { display: flex; align-items: center; gap: 6px; }
+  .legend-dot {
+    width: 12px; height: 12px;
+    border-radius: 50%;
+    border: 2px solid;
+  }
+  .legend-dot.detect { border-color: var(--detect); }
+  .legend-dot.pick { border-color: var(--pick); border-width: 3px; }
+
+  /* Controls panel */
+  .controls {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+    align-self: start;
+    position: sticky;
+    top: 24px;
+  }
+  .control-group h2 {
+    margin: 0 0 10px 0;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+  }
+  .slider-row { margin-bottom: 18px; }
+  .slider-row:last-child { margin-bottom: 0; }
+  .slider-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 6px;
+  }
+  .slider-header .name { font-size: 14px; font-weight: 500; }
+  .slider-header .value {
+    font-size: 14px;
+    font-variant-numeric: tabular-nums;
+    color: var(--accent);
+    font-weight: 600;
+  }
+  input[type="range"] {
+    width: 100%;
+    -webkit-appearance: none;
+    appearance: none;
+    background: transparent;
+  }
+  input[type="range"]::-webkit-slider-runnable-track {
+    height: 4px; background: var(--border); border-radius: 2px;
+  }
+  input[type="range"]::-moz-range-track {
+    height: 4px; background: var(--border); border-radius: 2px;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 16px; height: 16px;
+    margin-top: -6px;
+    border-radius: 50%;
+    background: var(--accent);
+    cursor: pointer;
+    border: 2px solid var(--panel);
+    box-shadow: 0 0 0 1px var(--accent);
+  }
+  input[type="range"]::-moz-range-thumb {
+    width: 16px; height: 16px;
+    border-radius: 50%;
+    background: var(--accent);
+    cursor: pointer;
+    border: 2px solid var(--panel);
+    box-shadow: 0 0 0 1px var(--accent);
+  }
+  .slider-caption {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 4px;
+    font-size: 11px;
+    color: var(--muted);
+  }
+
+  .toggle-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .switch {
+    position: relative;
+    display: inline-block;
+    width: 40px; height: 22px;
+  }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .slider-btn {
+    position: absolute;
+    cursor: pointer;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: var(--border);
+    border-radius: 22px;
+    transition: 0.2s;
+  }
+  .slider-btn::before {
+    content: "";
+    position: absolute;
+    height: 16px; width: 16px;
+    left: 3px; top: 3px;
+    background: white;
+    border-radius: 50%;
+    transition: 0.2s;
+  }
+  .switch input:checked + .slider-btn { background: var(--accent); }
+  .switch input:checked + .slider-btn::before { transform: translateX(18px); }
+
+  .pick-count-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .pick-count-row .name { font-size: 14px; font-weight: 500; }
+  .pick-count-input { display: flex; gap: 6px; align-items: center; }
+  .pick-count-input input[type="number"] {
+    width: 72px;
+    padding: 6px 8px;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text);
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+  }
+  .pick-count-input input[type="number"]:disabled { opacity: 0.4; }
+  .pick-count-input label {
+    display: flex; align-items: center; gap: 4px;
+    color: var(--muted); font-size: 12px; cursor: pointer;
+  }
+
+  /* Image picker + server config */
+  .image-picker {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+  .image-picker button { flex: 1; padding: 8px 10px; font-size: 12px; }
+  .server-config {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .server-config input[type="text"] {
+    flex: 1;
+    padding: 6px 8px;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text);
+    font-size: 12px;
+    font-family: monospace;
+  }
+
+  .button-row {
+    display: flex;
+    gap: 10px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+  }
+  button {
+    flex: 1;
+    padding: 10px 14px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--panel-2);
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  button:hover { background: #262b36; }
+  button.primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #06110a;
+    font-weight: 600;
+  }
+  button.primary:hover { background: #6ee79a; }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  footer {
+    margin-top: 24px;
+    text-align: center;
+    color: var(--muted);
+    font-size: 11px;
+  }
+
+  @media (max-width: 900px) {
+    .layout { grid-template-columns: 1fr; }
+    .controls { position: static; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>PICKABLE · 콜로니 검출</h1>
+  <span class="subtitle">Operator UI · connected to <span id="hdr-server">localhost:7780</span></span>
+</header>
+
+<div class="layout">
+
+  <!-- LEFT: preview -->
+  <section class="preview">
+    <div class="preview-stats">
+      <div class="stat">
+        <span class="label">총 검출</span>
+        <span class="value" id="stat-total">—</span>
+        <span class="label">개</span>
+      </div>
+      <div class="stat">
+        <span class="label">피킹 후보</span>
+        <span class="value pick" id="stat-pick">—</span>
+        <span class="label">개</span>
+      </div>
+    </div>
+
+    <div class="preview-image">
+      <div class="image-container">
+        <img id="preview-img" src="../../tests/fixtures/agar_sample.jpg" alt="agar plate">
+
+        <svg id="overlay-svg" class="overlay" viewBox="0 0 1350 910" preserveAspectRatio="none">
+          <!-- 검출된 콜로니는 여기에 동적으로 추가 -->
+          <g id="colonies-group"></g>
+
+          <!-- 벽 여백 -->
+          <rect id="wall-margin-rect" x="60" y="60" width="1230" height="790"
+                fill="none" stroke="#22c55e" stroke-width="4"
+                stroke-dasharray="12,8"/>
+
+          <!-- 크기 참조 원 -->
+          <g id="size-preview">
+            <text id="min-size-label" x="0" y="0" fill="#facc15" font-size="26"
+                  text-anchor="middle" font-family="sans-serif"
+                  style="paint-order:stroke; stroke:#000; stroke-width:3px;">최소</text>
+            <circle id="min-size-circle" cx="0" cy="0" r="1.36"
+                    fill="none" stroke="#facc15" stroke-width="3"/>
+            <text id="max-size-label" x="0" y="0" fill="#fb923c" font-size="26"
+                  text-anchor="middle" font-family="sans-serif"
+                  style="paint-order:stroke; stroke:#000; stroke-width:3px;">최대</text>
+            <circle id="max-size-circle" cx="0" cy="0" r="42"
+                    fill="none" stroke="#fb923c" stroke-width="3"/>
+          </g>
+        </svg>
+
+        <div class="overlay-note">
+          <div>— — 피킹 안전 여백 (벽 여백 슬라이더)</div>
+          <div style="color:#facc15; margin-top:2px;">○ 최소/최대 크기 예시</div>
+        </div>
+
+        <div class="loading-overlay" id="loading">
+          <div style="text-align:center;">
+            <div class="spinner" style="margin: 0 auto 12px;"></div>
+            <div>검출 중...</div>
+          </div>
+        </div>
+        <div class="error-overlay" id="error-box"></div>
+      </div>
+    </div>
+
+    <div class="legend">
+      <div class="legend-item">
+        <span class="legend-dot detect"></span>
+        <span>검출된 콜로니</span>
+      </div>
+      <div class="legend-item">
+        <span class="legend-dot pick"></span>
+        <span>피킹 후보 (로봇이 실제 집을)</span>
+      </div>
+      <div class="legend-item" style="margin-left:auto;">
+        <span id="legend-info" style="color:#666;">— [적용] 눌러 검출 시작</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- RIGHT: controls -->
+  <aside class="controls">
+
+    <div class="control-group">
+      <h2>이미지</h2>
+      <div class="image-picker">
+        <button id="btn-sample">샘플 이미지</button>
+        <button id="btn-upload">파일 업로드</button>
+        <input type="file" id="file-input" accept="image/*" hidden>
+      </div>
+      <div class="server-config">
+        <span>서버:</span>
+        <input type="text" id="server-url" value="http://localhost:7780">
+      </div>
+    </div>
+
+    <div class="control-group">
+      <h2>검출 파라미터</h2>
+
+      <div class="slider-row">
+        <div class="slider-header">
+          <span class="name">감도</span>
+          <span class="value" id="v-sensitivity">50</span>
+        </div>
+        <input type="range" min="0" max="100" value="50" data-target="v-sensitivity" data-field="sensitivity">
+        <div class="slider-caption"><span>← 엄격</span><span>민감 →</span></div>
+      </div>
+
+      <div class="slider-row">
+        <div class="slider-header">
+          <span class="name">최소 콜로니 크기</span>
+          <span class="value" id="v-min-size">20</span>
+        </div>
+        <input type="range" min="0" max="100" value="20" data-target="v-min-size" data-field="min_size">
+        <div class="slider-caption"><span>← 관대</span><span>엄격 →</span></div>
+      </div>
+
+      <div class="slider-row">
+        <div class="slider-header">
+          <span class="name">최대 콜로니 크기</span>
+          <span class="value" id="v-max-size">80</span>
+        </div>
+        <input type="range" min="0" max="100" value="80" data-target="v-max-size" data-field="max_size">
+        <div class="slider-caption"><span>← 엄격</span><span>관대 →</span></div>
+      </div>
+
+      <div class="slider-row">
+        <div class="slider-header">
+          <span class="name">벽 여백 (시각화만)</span>
+          <span class="value" id="v-edge-margin">40</span>
+        </div>
+        <input type="range" min="0" max="100" value="40" data-target="v-edge-margin" data-field="edge_margin">
+        <div class="slider-caption"><span>← 벽 근처 허용</span><span>안쪽만 →</span></div>
+      </div>
+
+      <div class="slider-row toggle-row">
+        <span class="name">붙은 콜로니 나누기</span>
+        <label class="switch">
+          <input type="checkbox" id="split-touching" checked>
+          <span class="slider-btn"></span>
+        </label>
+      </div>
+    </div>
+
+    <div class="control-group">
+      <h2>피킹 옵션</h2>
+      <div class="pick-count-row">
+        <span class="name">피킹 개수</span>
+        <div class="pick-count-input">
+          <input type="number" id="pick-count" value="96" min="1" disabled>
+          <label><input type="checkbox" id="pick-all" checked> 전부</label>
+        </div>
+      </div>
+    </div>
+
+    <div class="button-row">
+      <button id="btn-reset">기본값으로</button>
+      <button class="primary" id="btn-apply">적용</button>
+    </div>
+
+  </aside>
+
+</div>
+
+<footer>
+  기존 서버 필드로 매핑 · 벽 여백 슬라이더는 SVG 시각화만 (백엔드 구현 후 실제 필터에도 반영됨)<br>
+  샘플 이미지 사용 시 서버가 <code>vision/</code>에서 실행 중이어야 <code>tests/fixtures/agar_sample.jpg</code>를 읽음
+</footer>
+
+<script>
+'use strict';
+
+// ============================================================
+// State
+// ============================================================
+const STATE = {
+  imageSource: 'sample',      // 'sample' | 'upload'
+  imageBase64: null,          // upload 시 채워짐 (data URI prefix 제외)
+  imageWidth: 1350,           // 응답에서 갱신
+  imageHeight: 910,
+};
+
+// ============================================================
+// DOM refs
+// ============================================================
+const el = {
+  img:         document.getElementById('preview-img'),
+  svg:         document.getElementById('overlay-svg'),
+  wallRect:    document.getElementById('wall-margin-rect'),
+  minCircle:   document.getElementById('min-size-circle'),
+  maxCircle:   document.getElementById('max-size-circle'),
+  minLabel:    document.getElementById('min-size-label'),
+  maxLabel:    document.getElementById('max-size-label'),
+  coloniesG:   document.getElementById('colonies-group'),
+  loading:     document.getElementById('loading'),
+  errorBox:    document.getElementById('error-box'),
+  statTotal:   document.getElementById('stat-total'),
+  statPick:    document.getElementById('stat-pick'),
+  legendInfo:  document.getElementById('legend-info'),
+  btnSample:   document.getElementById('btn-sample'),
+  btnUpload:   document.getElementById('btn-upload'),
+  fileInput:   document.getElementById('file-input'),
+  serverUrl:   document.getElementById('server-url'),
+  hdrServer:   document.getElementById('hdr-server'),
+  btnReset:    document.getElementById('btn-reset'),
+  btnApply:    document.getElementById('btn-apply'),
+  splitTouching: document.getElementById('split-touching'),
+  pickCount:   document.getElementById('pick-count'),
+  pickAll:     document.getElementById('pick-all'),
+};
+
+// ============================================================
+// Spec §4.2 매핑 (0~100 → CV raw). 서버 신 필드 도입 전엔 클라이언트에서 매핑.
+// ============================================================
+function sensitivityToOffset(v) {
+  // 0~50 → -3~+7, 50~100 → +7~+15
+  if (v <= 50) return -3 + (v / 50) * 10;
+  return 7 + ((v - 50) / 50) * 8;
+}
+function minSizeToArea(v) {
+  const r = 1 + Math.pow(v / 100, 2) * 9;
+  return Math.PI * r * r;
+}
+function maxSizeToArea(v) {
+  const r = 10 + (v / 100) * 40;
+  return Math.PI * r * r;
+}
+function minSizeToRadius(v) { return 1 + Math.pow(v / 100, 2) * 9; }
+function maxSizeToRadius(v) { return 10 + (v / 100) * 40; }
+function edgeToMarginPx(v)  { return v * 1.5; }
+
+// ============================================================
+// 오버레이 갱신
+// ============================================================
+function updateWallMarginRect(sliderVal) {
+  const px = edgeToMarginPx(sliderVal);
+  el.wallRect.setAttribute('x', px);
+  el.wallRect.setAttribute('y', px);
+  el.wallRect.setAttribute('width',  Math.max(0, STATE.imageWidth  - 2 * px));
+  el.wallRect.setAttribute('height', Math.max(0, STATE.imageHeight - 2 * px));
+}
+
+function updateMinSizeCircle(sliderVal) {
+  el.minCircle.setAttribute('r', minSizeToRadius(sliderVal));
+}
+function updateMaxSizeCircle(sliderVal) {
+  el.maxCircle.setAttribute('r', maxSizeToRadius(sliderVal));
+}
+
+/**
+ * 이미지 크기 변경 시 SVG viewBox와 오버레이 참조점을 재배치.
+ * 크기 참조 원과 라벨을 이미지 상단 좌측 코너에 놓는다.
+ */
+function relayoutOverlays() {
+  const w = STATE.imageWidth, h = STATE.imageHeight;
+  el.svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+
+  // 크기 참조 원 위치: 좌상단 10%/22% 지점.
+  const cxMin = w * 0.10;
+  const cxMax = w * 0.22;
+  const cy    = h * 0.22;
+  el.minCircle.setAttribute('cx', cxMin);
+  el.minCircle.setAttribute('cy', cy);
+  el.maxCircle.setAttribute('cx', cxMax);
+  el.maxCircle.setAttribute('cy', cy);
+  el.minLabel.setAttribute('x', cxMin);
+  el.minLabel.setAttribute('y', cy - 55);
+  el.maxLabel.setAttribute('x', cxMax);
+  el.maxLabel.setAttribute('y', cy - 55);
+
+  // 벽 여백 재계산 (현재 슬라이더 값 기준)
+  updateWallMarginRect(+document.querySelector('[data-field="edge_margin"]').value);
+}
+
+// ============================================================
+// 콜로니 렌더링 (서버 응답 → SVG 원)
+// ============================================================
+function renderColonies(colonies) {
+  const frag = document.createDocumentFragment();
+  for (const c of colonies) {
+    const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    circle.setAttribute('cx', c.x);
+    circle.setAttribute('cy', c.y);
+    circle.setAttribute('r', Math.max(c.radius, 3));
+    circle.setAttribute('fill', 'none');
+    if (c.pickable) {
+      circle.setAttribute('stroke', '#22c55e');
+      circle.setAttribute('stroke-width', '4');
+    } else {
+      circle.setAttribute('stroke', '#ef4444');
+      circle.setAttribute('stroke-width', '2');
+    }
+    frag.appendChild(circle);
+  }
+  el.coloniesG.replaceChildren(frag);
+}
+function clearColonies() { el.coloniesG.replaceChildren(); }
+
+// ============================================================
+// 상태 표시 (loading / error / stats)
+// ============================================================
+function showLoading() {
+  el.loading.classList.add('active');
+  el.errorBox.classList.remove('active');
+  el.btnApply.disabled = true;
+}
+function hideLoading() {
+  el.loading.classList.remove('active');
+  el.btnApply.disabled = false;
+}
+function showError(msg) {
+  el.errorBox.textContent = '⚠ ' + msg;
+  el.errorBox.classList.add('active');
+  hideLoading();
+}
+function updateStats(total, pickable) {
+  el.statTotal.textContent = total;
+  el.statPick.textContent  = pickable;
+  el.legendInfo.textContent = `검출 완료 (${total}개, 피킹 후보 ${pickable}개)`;
+  el.legendInfo.style.color = 'var(--muted)';
+}
+
+// ============================================================
+// 이미지 로드
+// ============================================================
+async function loadSampleImage() {
+  STATE.imageSource = 'sample';
+  STATE.imageBase64 = null;
+  el.img.src = '../../tests/fixtures/agar_sample.jpg';
+  clearColonies();
+  await new Promise(res => {
+    el.img.onload = () => {
+      STATE.imageWidth  = el.img.naturalWidth  || 1350;
+      STATE.imageHeight = el.img.naturalHeight || 910;
+      relayoutOverlays();
+      res();
+    };
+  });
+  el.legendInfo.textContent = '샘플 이미지 로드됨 · [적용] 눌러 검출 시작';
+}
+
+function loadUploadedFile(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result;
+      const commaIdx = dataUrl.indexOf(',');
+      STATE.imageSource = 'upload';
+      STATE.imageBase64 = commaIdx >= 0 ? dataUrl.slice(commaIdx + 1) : dataUrl;
+      el.img.src = dataUrl;
+      el.img.onload = () => {
+        STATE.imageWidth  = el.img.naturalWidth;
+        STATE.imageHeight = el.img.naturalHeight;
+        relayoutOverlays();
+        clearColonies();
+        el.legendInfo.textContent = `${file.name} 로드됨 · [적용] 눌러 검출 시작`;
+        resolve();
+      };
+    };
+    reader.onerror = () => reject(new Error('파일을 읽을 수 없습니다'));
+    reader.readAsDataURL(file);
+  });
+}
+
+// ============================================================
+// API 호출: POST /detect
+// ============================================================
+function buildPayload() {
+  const sens  = +document.querySelector('[data-field="sensitivity"]').value;
+  const minSz = +document.querySelector('[data-field="min_size"]').value;
+  const maxSz = +document.querySelector('[data-field="max_size"]').value;
+
+  const payload = {
+    threshold_offset: Math.round(sensitivityToOffset(sens)),
+    min_area:         minSizeToArea(minSz),
+    max_area:         maxSizeToArea(maxSz),
+    split_touching:   el.splitTouching.checked,
+    pick_top_n:       el.pickAll.checked ? null : +el.pickCount.value,
+    // invert / tophat_kernel / mask_walls / min_circularity 는 서버 default 유지
+  };
+
+  if (STATE.imageSource === 'sample') {
+    // 서버가 vision/에서 launch됐다고 가정. image_path는 서버 상대경로.
+    payload.image_path = 'tests/fixtures/agar_sample.jpg';
+  } else {
+    payload.image = STATE.imageBase64;
+  }
+  return payload;
+}
+
+async function runDetect() {
+  showLoading();
+  clearColonies();
+  const server = el.serverUrl.value.trim().replace(/\/$/, '');
+  const payload = buildPayload();
+
+  let resp;
+  try {
+    resp = await fetch(`${server}/detect`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+  } catch (e) {
+    showError(`서버에 연결할 수 없습니다 (${server}). 서버가 실행 중인지 확인.`);
+    return;
+  }
+
+  if (!resp.ok) {
+    let detail = `HTTP ${resp.status}`;
+    try {
+      const err = await resp.json();
+      if (err.detail) detail = typeof err.detail === 'string'
+        ? err.detail
+        : JSON.stringify(err.detail);
+    } catch {}
+    showError(`검출 실패: ${detail}`);
+    return;
+  }
+
+  const data = await resp.json();
+  hideLoading();
+
+  // 응답의 실제 이미지 크기로 오버레이 재계산
+  STATE.imageWidth  = data.width  || STATE.imageWidth;
+  STATE.imageHeight = data.height || STATE.imageHeight;
+  relayoutOverlays();
+
+  renderColonies(data.colonies || []);
+  const pickable = (data.colonies || []).filter(c => c.pickable).length;
+  updateStats(data.count, pickable);
+}
+
+// ============================================================
+// 이벤트 바인딩
+// ============================================================
+document.querySelectorAll('input[type="range"]').forEach(input => {
+  input.addEventListener('input', e => {
+    const target = document.getElementById(e.target.dataset.target);
+    if (target) target.textContent = e.target.value;
+    const field = e.target.dataset.field;
+    const val = +e.target.value;
+    if (field === 'edge_margin') updateWallMarginRect(val);
+    if (field === 'min_size')    updateMinSizeCircle(val);
+    if (field === 'max_size')    updateMaxSizeCircle(val);
+  });
+});
+
+el.pickAll.addEventListener('change', () => {
+  el.pickCount.disabled = el.pickAll.checked;
+});
+
+el.btnSample.addEventListener('click', () => { loadSampleImage(); });
+el.btnUpload.addEventListener('click', () => el.fileInput.click());
+el.fileInput.addEventListener('change', async e => {
+  const f = e.target.files[0];
+  if (!f) return;
+  try { await loadUploadedFile(f); }
+  catch (err) { showError(err.message); }
+  e.target.value = '';   // 같은 파일 재선택 허용
+});
+
+el.serverUrl.addEventListener('input', () => {
+  el.hdrServer.textContent = el.serverUrl.value
+    .replace(/^https?:\/\//, '')
+    .replace(/\/$/, '');
+});
+
+el.btnReset.addEventListener('click', () => {
+  const defaults = {
+    'v-sensitivity': 50,
+    'v-min-size':    20,
+    'v-max-size':    80,
+    'v-edge-margin': 40,
+  };
+  document.querySelectorAll('input[type="range"]').forEach(input => {
+    const k = input.dataset.target;
+    if (k in defaults) {
+      input.value = defaults[k];
+      document.getElementById(k).textContent = defaults[k];
+    }
+  });
+  el.splitTouching.checked = true;
+  el.pickAll.checked = true;
+  el.pickCount.disabled = true;
+  el.pickCount.value = 96;
+  updateWallMarginRect(defaults['v-edge-margin']);
+  updateMinSizeCircle(defaults['v-min-size']);
+  updateMaxSizeCircle(defaults['v-max-size']);
+});
+
+el.btnApply.addEventListener('click', runDetect);
+
+// ============================================================
+// 초기화
+// ============================================================
+(async function init() {
+  await loadSampleImage();
+})();
+
+</script>
+</body>
+</html>
