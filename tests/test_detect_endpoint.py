@@ -143,3 +143,38 @@ def test_default_abstract_matches_raw_defaults():
         },
     ).json()
     assert abstract["count"] == raw["count"]
+
+
+SAMPLE_PATH = "tests/fixtures/agar_sample.jpg"
+
+
+def _post_detect(**abstract):
+    return client.post(
+        "/detect",
+        json={"image_path": SAMPLE_PATH, **abstract},
+    ).json()
+
+
+def test_sensitivity_direction_more_sensitive_finds_more():
+    strict = _post_detect(sensitivity=0)["count"]
+    permissive = _post_detect(sensitivity=100)["count"]
+    assert permissive > strict, (
+        f"expected permissive({permissive}) > strict({strict})"
+    )
+
+
+def test_min_size_direction_stricter_finds_fewer():
+    permissive = _post_detect(min_size=0)["count"]
+    strict = _post_detect(min_size=100)["count"]
+    assert strict < permissive, (
+        f"expected strict({strict}) < permissive({permissive})"
+    )
+
+
+def test_edge_margin_direction_larger_margin_reduces_pickable():
+    def pickable(edge):
+        colonies = _post_detect(edge_margin=edge)["colonies"]
+        return sum(1 for c in colonies if c["pickable"])
+    assert pickable(100) <= pickable(0), (
+        "larger edge margin should not increase pickable count"
+    )
