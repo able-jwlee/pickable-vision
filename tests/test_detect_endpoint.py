@@ -79,3 +79,67 @@ def test_detect_returns_applied_params():
     assert "pick_edge_margin" in ap
     assert "split_touching" in ap
     assert "pick_top_n" in ap
+
+
+def test_abstract_sensitivity_overrides_threshold_offset():
+    # sensitivity=100 → threshold_offset should be 15, ignoring raw field
+    resp = client.post(
+        "/detect",
+        json={
+            "image": _synthetic_b64(),
+            "mask_walls": False,
+            "threshold_offset": 0,   # should be OVERRIDDEN
+            "sensitivity": 100,
+        },
+    )
+    ap = resp.json()["applied_params"]
+    assert ap["threshold_offset"] == 15
+
+
+def test_abstract_min_size_overrides_min_area():
+    resp = client.post(
+        "/detect",
+        json={
+            "image": _synthetic_b64(),
+            "mask_walls": False,
+            "min_area": 999,          # should be OVERRIDDEN
+            "min_size": 20,
+        },
+    )
+    ap = resp.json()["applied_params"]
+    # min_size=20 → min_area ≈ 5.81 (current default)
+    assert abs(ap["min_area"] - 5.81) < 0.5
+
+
+def test_abstract_edge_margin_overrides_config():
+    resp = client.post(
+        "/detect",
+        json={
+            "image": _synthetic_b64(),
+            "mask_walls": True,
+            "edge_margin": 100,       # → 150px
+        },
+    )
+    ap = resp.json()["applied_params"]
+    assert ap["pick_edge_margin"] == 150
+
+
+def test_default_abstract_matches_raw_defaults():
+    """새 필드 미지정 요청과 abstract default(50/20/80/40) 요청이 같은 결과."""
+    raw = client.post(
+        "/detect",
+        json={"image": _synthetic_b64(), "min_area": 50, "mask_walls": False},
+    ).json()
+    abstract = client.post(
+        "/detect",
+        json={
+            "image": _synthetic_b64(),
+            "mask_walls": False,
+            "sensitivity": 50,
+            "max_size": 80,
+            "edge_margin": 40,
+            # min_size는 지정 안 함 — 기존 min_area=50과 비교
+            "min_area": 50,
+        },
+    ).json()
+    assert abstract["count"] == raw["count"]

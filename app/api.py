@@ -9,6 +9,12 @@ from app.annotate import draw_pick_targets, save_annotated
 from app.detector import detect, pick_region
 from app.image_io import decode_base64_image, encode_png_base64, read_image_file
 from app.models import Colony, DetectRequest, DetectResponse, PreviewResponse
+from app.param_mapping import (
+    edge_to_margin_px,
+    max_size_to_area,
+    min_size_to_area,
+    sensitivity_to_offset,
+)
 from app.scoring import score_colonies
 
 router = APIRouter()
@@ -24,18 +30,51 @@ def _load_image(req: DetectRequest) -> np.ndarray:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-def _detect_and_score(img: np.ndarray, req: DetectRequest) -> list[Colony]:
+def _resolve_params(req: DetectRequest) -> dict:
+    """추상 0~100 필드가 지정되면 raw로 매핑, 아니면 기존 raw/config 유지.
+
+    반환 dict는 응답의 applied_params가 된다.
+    """
+    threshold_offset = (
+        sensitivity_to_offset(req.sensitivity)
+        if req.sensitivity is not None else req.threshold_offset
+    )
+    min_area = (
+        min_size_to_area(req.min_size)
+        if req.min_size is not None else req.min_area
+    )
+    max_area = (
+        max_size_to_area(req.max_size)
+        if req.max_size is not None else req.max_area
+    )
+    pick_edge_margin = (
+        edge_to_margin_px(req.edge_margin)
+        if req.edge_margin is not None else config.PICK_EDGE_MARGIN
+    )
+    return {
+        "threshold_offset": threshold_offset,
+        "min_area": min_area,
+        "max_area": max_area,
+        "pick_edge_margin": pick_edge_margin,
+        "split_touching": req.split_touching,
+        "pick_top_n": req.pick_top_n,
+    }
+
+
+def _detect_and_score(
+    img: np.ndarray, req: DetectRequest, resolved: dict
+) -> list[Colony]:
     """검출 → 피킹 적합도 점수화 → Colony 리스트."""
     circles = detect(
         img,
-        min_area=req.min_area,
-        max_area=req.max_area,
+        min_area=resolved["min_area"],
+        max_area=resolved["max_area"],
         min_circularity=req.min_circularity,
         invert=req.invert,
         tophat_kernel=req.tophat_kernel,
         mask_walls=req.mask_walls,
-        threshold_offset=req.threshold_offset,
-        split_touching=req.split_touching,
+        threshold_offset=resolved["threshold_offset"],
+        split_touching=resolved["split_touching"],
     )
     geom = [
         {"x": x, "y": y, "radius": r, "circularity": c}
@@ -43,11 +82,11 @@ def _detect_and_score(img: np.ndarray, req: DetectRequest) -> list[Colony]:
     ]
     # 피킹 대상은 웰 경계에서 안전 여백만큼 안쪽만 인정 (벽 근처 반점 제외).
     pick_mask = (
-        pick_region(img, edge_margin=config.PICK_EDGE_MARGIN)
+        pick_region(img, edge_margin=resolved["pick_edge_margin"])
         if req.mask_walls
         else None
     )
-    scores = score_colonies(geom, top_n=req.pick_top_n, pick_mask=pick_mask)
+    scores = score_colonies(geom, top_n=resolved["pick_top_n"], pick_mask=pick_mask)
     return [
         Colony(
             id=i + 1,
@@ -78,7 +117,8 @@ def health() -> dict:
 def detect_colonies(req: DetectRequest) -> DetectResponse:
     img = _load_image(req)
     height, width = img.shape[:2]
-    colonies = _detect_and_score(img, req)
+    resolved = _resolve_params(req)
+    colonies = _detect_and_score(img, req, resolved)
 
     annotated_path: str | None = None
     if req.save_annotated:
@@ -92,21 +132,15 @@ def detect_colonies(req: DetectRequest) -> DetectResponse:
         count=len(colonies),
         colonies=colonies,
         annotated_path=annotated_path,
-        applied_params={
-            "threshold_offset": req.threshold_offset,
-            "min_area": req.min_area,
-            "max_area": req.max_area,
-            "pick_edge_margin": config.PICK_EDGE_MARGIN,
-            "split_touching": req.split_touching,
-            "pick_top_n": req.pick_top_n,
-        },
+        applied_params=resolved,
     )
 
 
 @router.post("/detect/preview", response_model=PreviewResponse)
 def detect_preview(req: DetectRequest) -> PreviewResponse:
     img = _load_image(req)
-    colonies = _detect_and_score(img, req)
+    resolved = _resolve_params(req)
+    colonies = _detect_and_score(img, req, resolved)
     annotated = draw_pick_targets(img, colonies, mode=req.annotate)
     if req.save_annotated:
         save_annotated(annotated, config.OUTPUT_DIR, _output_name(req))
