@@ -91,7 +91,7 @@ value 100  → r_min = 10px      (min_area ≈ 314)
 **최대 콜로니 크기** (값↑ = 관대)
 ```
 value 0    → r_max = 10px      (max_area ≈ 314)
-value 80   → r_max ≈ 40px      (max_area ≈ 5000 — 현재 default)
+value 75   → r_max = 40px      (max_area ≈ 5027 — 현재 default 5000에 앵커)
 value 100  → r_max = 50px      (max_area ≈ 7854)
 ```
 - 매핑: `r_max = 10 + (value/100) · 40` (linear)
@@ -174,14 +174,14 @@ class DetectResponse(BaseModel):
 - **앵커 값** (default 유지):
   - `sensitivity_to_offset(50) == 7`
   - `min_size_to_area(20)`, `6.0` 대비 ±5% 이내
-  - `max_size_to_area(80)`, `5000.0` 대비 ±5% 이내
+  - `max_size_to_area(75)`, `5000.0` 대비 ±1% 이내
   - `edge_to_margin(40) == 60`
 - **극한값**: 0, 100 입력에서 예외 없이 반환.
 - **단조성**: 각 매핑 함수는 단조 증가 또는 단조 감소여야 함 (방향 반전 방지).
 
 ### 5.2 엔드포인트 회귀 테스트 (`tests/test_detect_endpoint.py` 추가)
 
-- **default 등가성**: 새 필드 미지정 요청과 `sensitivity=50, min_size=20, max_size=80, edge_margin=40, split_touching=True` 요청이 **완전히 동일한 콜로니 리스트**를 반환.
+- **default 등가성**: 새 필드 미지정 요청과 `sensitivity=50, min_size=20, max_size=75, edge_margin=40, split_touching=True` 요청이 **완전히 동일한 콜로니 리스트**를 반환.
 - **우선순위**: 새 필드와 raw 필드를 동시에 보내면 새 필드가 이긴다.
 - **`applied_params` 존재 확인**: 응답에 raw 값 dict가 있고, 매핑 결과와 일치.
 

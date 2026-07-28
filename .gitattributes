@@ -1,0 +1,8 @@
+# 텍스트 파일은 저장소에 LF로 저장, 체크아웃 시 OS 기본으로 변환.
+# Windows/Linux 혼용 시 CRLF↔LF 차이만 있는 유령 diff 방지.
+* text=auto
+
+# 이미지 등 바이너리는 변환 대상에서 제외.
+*.jpg binary
+*.jpeg binary
+*.png binary

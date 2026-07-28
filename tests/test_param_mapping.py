@@ -34,8 +34,8 @@ def test_min_size_extremes():
 
 
 def test_max_size_default_matches_current_max_area():
-    # max_size=80 should give ~max_area=5000 (current DEFAULT_MAX_AREA)
-    assert max_size_to_area(80) == pytest.approx(5000.0, rel=0.15)
+    # max_size=75 should give ~max_area=5000 (current DEFAULT_MAX_AREA)
+    assert max_size_to_area(75) == pytest.approx(5000.0, rel=0.01)
 
 
 def test_max_size_extremes():

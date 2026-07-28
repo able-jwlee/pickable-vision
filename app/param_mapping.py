@@ -28,7 +28,7 @@ def min_size_to_area(v: int) -> float:
 
 
 def max_size_to_area(v: int) -> float:
-    """최대 크기 0~100 → max_area. 80이 현재 default(≈5000)에 앵커.
+    """최대 크기 0~100 → max_area. 75가 현재 default(≈5000)에 앵커.
 
     r_max = 10 + (v/100) · 40  (linear)
     max_area = π · r_max²

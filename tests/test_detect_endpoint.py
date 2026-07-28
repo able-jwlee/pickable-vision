@@ -125,7 +125,7 @@ def test_abstract_edge_margin_overrides_config():
 
 
 def test_default_abstract_matches_raw_defaults():
-    """새 필드 미지정 요청과 abstract default(50/20/80/40) 요청이 같은 결과."""
+    """새 필드 미지정 요청과 abstract default(50/20/75/40) 요청이 같은 결과."""
     raw = client.post(
         "/detect",
         json={"image": _synthetic_b64(), "min_area": 50, "mask_walls": False},
@@ -136,7 +136,7 @@ def test_default_abstract_matches_raw_defaults():
             "image": _synthetic_b64(),
             "mask_walls": False,
             "sensitivity": 50,
-            "max_size": 80,
+            "max_size": 75,
             "edge_margin": 40,
             # min_size는 지정 안 함 — 기존 min_area=50과 비교
             "min_area": 50,

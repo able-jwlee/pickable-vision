@@ -55,7 +55,7 @@ CV 원본 파라미터 대신 오퍼레이터가 이해하기 쉬운 0~100 슬�
 |---|---|---|
 | `sensitivity` | `threshold_offset` | 50 → +7 |
 | `min_size` | `min_area` | 20 → ≈6 |
-| `max_size` | `max_area` | 80 → ≈5000 |
+| `max_size` | `max_area` | 75 → ≈5027 |
 | `edge_margin` | 벽 여백(px) | 40 → 60 |
 
 응답에는 실제 적용된 raw 값이 `applied_params`에 담겨 되반환된다.
