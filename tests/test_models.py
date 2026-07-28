@@ -35,3 +35,32 @@ def test_image_path_alone_is_valid():
     req = DetectRequest(image_path="some/path.jpg")
     assert req.image is None
     assert req.image_path == "some/path.jpg"
+
+
+def test_detect_request_accepts_abstract_fields():
+    req = DetectRequest(
+        image="Zm9v",  # base64 dummy
+        sensitivity=50,
+        min_size=20,
+        max_size=80,
+        edge_margin=40,
+    )
+    assert req.sensitivity == 50
+    assert req.min_size == 20
+    assert req.max_size == 80
+    assert req.edge_margin == 40
+
+
+def test_detect_request_abstract_fields_default_to_none():
+    req = DetectRequest(image="Zm9v")
+    assert req.sensitivity is None
+    assert req.min_size is None
+    assert req.max_size is None
+    assert req.edge_margin is None
+
+
+def test_detect_request_rejects_out_of_range_abstract_field():
+    with pytest.raises(ValidationError):
+        DetectRequest(image="Zm9v", sensitivity=101)
+    with pytest.raises(ValidationError):
+        DetectRequest(image="Zm9v", min_size=-1)

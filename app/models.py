@@ -31,6 +31,13 @@ class DetectRequest(BaseModel):
     # 어느 쪽이든 응답 JSON의 colonies/pickable/score는 동일하게 전부 반환된다.
     annotate: Literal["all", "pick"] = "all"
 
+    # 오퍼레이터용 0~100 추상 스케일 (스펙 §4.2). 있으면 대응하는 raw 필드보다 우선.
+    # None이면 기존 raw 필드(threshold_offset, min_area, max_area) 또는 config default를 사용.
+    sensitivity: int | None = Field(None, ge=0, le=100)
+    min_size:    int | None = Field(None, ge=0, le=100)
+    max_size:    int | None = Field(None, ge=0, le=100)
+    edge_margin: int | None = Field(None, ge=0, le=100)
+
     @field_validator("tophat_kernel")
     @classmethod
     def _tophat_kernel_min(cls, v: int) -> int:
@@ -70,6 +77,8 @@ class DetectResponse(BaseModel):
     colonies: list[Colony]
     # save_annotated=true일 때 저장된 이미지 경로, 아니면 null
     annotated_path: str | None = None
+    # 검출에 실제 적용된 raw 파라미터 dict (튜닝 재현·이슈 리포트용)
+    applied_params: dict = {}
 
 
 class PreviewResponse(BaseModel):
