@@ -368,9 +368,23 @@
   <section class="preview">
     <div class="preview-stats">
       <div class="stat">
-        <span class="label">검출 · 피킹 대상</span>
+        <span class="label">검출된 콜로니</span>
         <span class="value" id="stat-total">—</span>
         <span class="label">개</span>
+      </div>
+      <!-- 검출된 것 전부가 피킹 대상이다(서버 기본값). 두 수가 갈리는 건
+           피킹 필터를 명시로 켰을 때뿐이므로, 그때만 눈에 띄게 보여준다. -->
+      <div class="stat" id="stat-pick-wrap" style="display:none;">
+        <span class="label">그중 피킹 대상</span>
+        <span class="value" id="stat-pick">—</span>
+        <span class="label">개</span>
+      </div>
+      <div class="stat" style="margin-left:auto;">
+        <span class="label">보기</span>
+        <select id="view-mode" class="plate-select" style="width:auto;">
+          <option value="server" selected>서버가 표시한 이미지</option>
+          <option value="overlay">원본 + 좌표 오버레이</option>
+        </select>
       </div>
     </div>
 
@@ -378,29 +392,10 @@
       <div class="image-container">
         <img id="preview-img" src="../../tests/fixtures/agar_sample.jpg" alt="agar plate">
 
+        <!-- 좌표 오버레이 보기에서만 사용. 서버 이미지 보기에서는 숨긴다. -->
         <svg id="overlay-svg" class="overlay" viewBox="0 0 1350 910" preserveAspectRatio="none">
-          <!-- 검출된 콜로니는 여기에 동적으로 추가 -->
           <g id="colonies-group"></g>
-
-          <!-- 벽 여백 -->
-          <rect id="wall-margin-rect" x="60" y="60" width="1230" height="790"
-                fill="none" stroke="#22c55e" stroke-width="4"
-                stroke-dasharray="12,8"/>
-
-          <!-- 크기 참조 원 (예상 콜로니 크기) -->
-          <g id="size-preview">
-            <text id="size-label" x="0" y="0" fill="#facc15" font-size="26"
-                  text-anchor="middle" font-family="sans-serif"
-                  style="paint-order:stroke; stroke:#000; stroke-width:3px;">크기</text>
-            <circle id="size-circle" cx="0" cy="0" r="1.36"
-                    fill="none" stroke="#facc15" stroke-width="3"/>
-          </g>
         </svg>
-
-        <div class="overlay-note">
-          <div>— — 피킹 안전 여백 (벽 여백 슬라이더)</div>
-          <div style="color:#facc15; margin-top:2px;">○ 최소 콜로니 크기</div>
-        </div>
 
         <div class="loading-overlay" id="loading">
           <div style="text-align:center;">
@@ -416,6 +411,10 @@
       <div class="legend-item">
         <span class="legend-dot"></span>
         <span>검출된 콜로니 (전부 피킹 대상)</span>
+      </div>
+      <div class="legend-item" id="legend-fp" style="display:none;">
+        <span class="legend-dot" style="background:#f87171;"></span>
+        <span>빨강 = 피킹 필터에서 제외됨</span>
       </div>
       <div class="legend-item" style="margin-left:auto;">
         <span id="legend-info" style="color:#666;">— [검출] 눌러 시작</span>
@@ -447,13 +446,38 @@
     <div class="control-group">
       <h2>용기 종류</h2>
       <select id="plate-type" class="plate-select">
-        <option value="well_8" selected>웰 플레이트 (4×2)</option>
-        <option value="petri">페트리 접시</option>
+        <option value="petri" selected>페트리 접시 (원형)</option>
+        <option value="well8">웰 플레이트 (4×2)</option>
       </select>
       <div class="image-meta" style="margin-top:6px;">
-        페트리는 <code>app/plates/petri.py</code> 구현 후에만 실효.
-        현재는 요청에 실려도 서버가 조용히 무시합니다.
+        접시 위치·크기와 밝기는 자동으로 찾습니다.
       </div>
+    </div>
+
+    <div class="control-group">
+      <h2>콜로니 색</h2>
+      <select id="polarity" class="plate-select">
+        <option value="auto" selected>자동 — 양쪽 모두 검출</option>
+        <option value="bright">밝은 콜로니 (한천보다 밝음)</option>
+        <option value="dark">어두운 콜로니 (한천보다 어두움)</option>
+      </select>
+      <div class="image-meta" style="margin-top:6px;">
+        <b>자동으로 두세요.</b> 서버가 접시마다 판정하며, 라벨 39장 + 합성 4종
+        검증에서 <b>43/43</b> 정확했습니다. 지정하는 것은 자동 판정이 틀리는
+        접시를 발견했을 때만 쓰는 우회로입니다.
+      </div>
+    </div>
+
+    <div class="control-group">
+      <h2>프리셋</h2>
+      <select id="preset" class="plate-select">
+        <option value="default" selected>기본 (권장)</option>
+        <option value="small">작은 콜로니가 많음</option>
+        <option value="faint">흐려서 잘 안 보임</option>
+        <option value="strict">오검출을 줄이고 싶음</option>
+        <option value="maxrecall">최대한 많이 찾기</option>
+      </select>
+      <div class="image-meta" id="preset-note" style="margin-top:6px;"></div>
     </div>
 
     <div class="control-group">
@@ -465,35 +489,51 @@
           <span class="value" id="v-sensitivity">50</span>
         </div>
         <input type="range" min="0" max="100" value="50" data-target="v-sensitivity" data-field="sensitivity">
-        <div class="slider-caption"><span>← 엄격</span><span>민감 →</span></div>
+        <div class="slider-caption"><span>← 엄격 (오검출 적게)</span><span>민감 (더 많이 잡기) →</span></div>
+        <div class="image-meta" id="hint-sensitivity"></div>
       </div>
 
       <div class="slider-row">
         <div class="slider-header">
-          <span class="name">콜로니 크기 (최소)</span>
-          <span class="value" id="v-size">20</span>
+          <span class="name">콜로니 크기</span>
+          <span class="value" id="v-min-size">제한 없음</span>
         </div>
-        <input type="range" min="0" max="100" value="20" data-target="v-size" data-field="size">
-        <div class="slider-caption"><span>← 관대 (작은 것도 검출)</span><span>엄격 →</span></div>
-      </div>
-
-      <div class="slider-row">
-        <div class="slider-header">
-          <span class="name">벽 여백</span>
-          <span class="value" id="v-edge-margin">40</span>
-        </div>
-        <input type="range" min="0" max="100" value="40" data-target="v-edge-margin" data-field="edge_margin">
-        <div class="slider-caption"><span>← 벽 근처 허용</span><span>안쪽만 →</span></div>
-      </div>
-
-      <div class="slider-row toggle-row">
-        <span class="name">붙은 콜로니 나누기</span>
-        <label class="switch">
-          <input type="checkbox" id="split-touching" checked>
-          <span class="slider-btn"></span>
-        </label>
+        <input type="range" min="0" max="30" value="0" step="1" data-target="v-min-size" data-field="min_size">
+        <div class="slider-caption"><span>← 작은 것도 검출</span><span>큰 것만 검출 →</span></div>
+        <div class="image-meta">이보다 작은 것은 무시합니다. <b>접시 지름 대비 %</b>라 해상도·카메라가 바뀌어도 같은 뜻입니다 — 실측 콜로니 분포는 1~45%, 중앙값 7%.</div>
       </div>
     </div>
+
+    <!-- 프리셋이 설정하는 값들. 슬라이더로 중복 노출하면 프리셋과 어긋난 조합을
+         만들 수 있어 숨겼다. 진단이 필요할 때만 펼친다.
+
+         제거한 것:
+         · 피킹 최대 반지름 — 피킹 필터를 껐으므로(검출된 것 = 피킹 대상) 이제
+           켜면 망가지는 knob이다. 실제로 UI 기본값 20이 서버 기본값 0을 덮어써
+           피킹 대상이 매번 0이 되는 버그를 냈다.
+         · 검출 경로(blob/tophat) — 개발자 스위치다. 오퍼레이터가 고를 근거가 없고
+           tophat을 고르면 페트리 접시에서 정밀도가 0.85%로 떨어진다. -->
+    <details class="control-group">
+      <summary style="cursor:pointer; font-weight:600; font-size:13px;">진단용 (프리셋이 설정함)</summary>
+
+      <div class="slider-row" style="margin-top:12px;">
+        <div class="slider-header">
+          <span class="name">색 보정</span>
+          <span class="value" id="v-colour">1.0</span>
+        </div>
+        <input type="range" min="10" max="80" value="10" step="5" data-target="v-colour" data-field="colour_credit">
+        <div class="slider-caption"><span>← 끔</span><span>색이 뚜렷하면 관대 →</span></div>
+      </div>
+
+      <div class="slider-row">
+        <div class="slider-header"><span class="name">처리 해상도</span></div>
+        <select id="work-size" class="plate-select">
+          <option value="768">768 (빠름)</option>
+          <option value="1024" selected>1024 (기본)</option>
+          <option value="1536">1536 (작은 콜로니)</option>
+        </select>
+      </div>
+    </details>
 
     <div class="button-row stack">
       <button id="btn-reset">기본값으로</button>
@@ -506,10 +546,15 @@
 </div>
 
 <footer>
-  기존 서버 필드로 매핑 · 벽 여백 슬라이더는 SVG 시각화만 (백엔드 구현 후 실제 필터에도 반영됨)<br>
-  샘플 선택 시 서버로 <code>image_path</code>를 보내므로 서버가 <code>vision/</code>에서 실행 중이어야 함 · 파일 업로드는 base64라 제약 없음<br>
-  <code>sample/</code> 40장은 용량(약 82MB) 때문에 git에 없음 — 없는 환경에서는 맨 위 <code>agar_sample.jpg</code>만 동작<br>
-  <b>로봇 전송</b>은 목업 — 실제 로봇 연동은 이 UI 밖입니다. 검출된 좌표 전체를 콘솔에 요약합니다.
+  <b>서버 실행:</b> <code>vision/</code> 에서 <code>.venv\Scripts\python main.py</code> → <code>http://localhost:7780</code><br>
+  <code>return_image: true</code> 로 요청해 <b>좌표와 표시 이미지를 한 응답에</b> 받습니다.
+  좌표는 항상 원본 픽셀 기준이고, 전송용으로 축소된 이미지 위에 겹치려면 응답의
+  <code>annotated_image_scale</code> 을 곱합니다.<br>
+  샘플 선택 시 <code>image_path</code>를 보내므로 서버가 <code>vision/</code>에서 실행 중이어야 함 ·
+  파일 업로드는 base64라 경로 제약 없음<br>
+  <code>sample/</code> 40장은 용량(약 82MB) 때문에 git에 없음 — 없는 환경에서는 맨 위
+  <code>agar_sample.jpg</code>만 동작 (단 이 픽스처는 <b>웰 플레이트</b>라 용기 종류를 바꿔야 함)<br>
+  <b>로봇 전송</b>은 목업 — 피킹 대상 좌표만 콘솔에 요약합니다. 실제 로봇 연동은 이 UI 밖입니다.
 </footer>
 
 <script>
@@ -577,14 +622,88 @@ const GROUP_LABELS = {
 // 이 크기를 넘으면 "기본 파라미터가 안 맞는다" 경고. fixture(1350x910) 기준.
 const HIRES_WARN_PX = 1600;
 
-// 슬라이더 기본값 (reset 이 참조)
+// 슬라이더 기본값 (reset 이 참조). 서버 기본값과 일치시켜 둔다 —
+// 감도 50 → min_t 35, 크기 제한 없음, 색 보정 끔, 해상도 1024.
 const DEFAULTS = {
   sensitivity: 50,
-  size:        20,
-  edge_margin: 40,
-  split_touching: true,
-  plate_type: 'well_8',
+  // 콜로니 크기 슬라이더 하나 = 최소 크기 (접시 지름 대비 %). 0 = 제한 없음.
+  // 상한은 두지 않는다 — 상한의 용도는 병합된 큰 덩어리를 자르는 것인데,
+  // 피킹 필터를 끈 방향(검출된 것 = 피킹 대상)과 어긋난다.
+  min_size:    0,
+  colour_credit: 10,  // 슬라이더는 10배 정수 (10 = 1.0배 = 끔)
+  work_size:   '1024',
+  plate_type:  'petri',
+  polarity:    'auto',
 };
+
+// ============================================================
+// 프리셋 — 촬영 조건별 최적값이 실제로 다르다는 측정 결과를 담았다.
+//
+// 단일 기본값으로는 원리적으로 최적이 안 된다. sample/ 39장 실측 F1:
+//   조건        기본값   조건별 최적
+//   bright      64.7  →  68.0 (해상도 1536)
+//   vague       26.1  →  40.9 (색 보정 2배)
+//   lower-res   78.0     기본값이 최적
+//   dark        80.7     기본값이 최적
+//
+// 오검출 대가를 함께 적어둔다 — 검출된 것이 전부 피킹 대상이므로
+// 오검출 하나는 로봇이 빈 한천을 찍는 것과 같다.
+// ============================================================
+const PRESETS = {
+  default: {
+    label: '기본값 — 정밀도 86% · 재현율 65%. 100개 집으면 빈 웰 약 14개. '
+         + '접시 극성은 자동 판정합니다.',
+    values: {},
+  },
+  small: {
+    label: '작은 콜로니가 많은 접시. 처리 해상도를 올려 작은 것까지 잡습니다. '
+         + '다른 조건에서는 정밀도를 크게 잃으니 확실할 때만 쓰세요.',
+    values: { work_size: '1536' },
+  },
+  faint: {
+    label: '흐린 접시. 색이 뚜렷하면 감도 요구를 낮춥니다. '
+         + '흐린 조건은 기본값에서도 재현율 32.5% 로 가장 약한 그룹입니다 — '
+         + '조명·배지 대비를 올리는 것이 알고리즘보다 효과가 큽니다.',
+    values: { colour_credit: 15 },
+  },
+  // 감도 42 = min_t 약 35 = **이전 기본값**. 측정된 지점이라 라벨의 수치가
+  // 실측이다. 임의의 감도값을 쓰면 그 지점의 성적을 모르는 채 라벨을 붙이게 된다.
+  strict: {
+    label: '오검출을 줄입니다 — 정밀도 94% · 재현율 60%. '
+         + '빈 웰이 14개에서 6개로 줄고, 대신 놓치는 콜로니가 늘어납니다.',
+    values: { sensitivity: 42 },
+  },
+  maxrecall: {
+    label: '최대한 많이 찾기 — 실측 정밀도 70% · 재현율 71%. '
+         + '3개 중 1개가 빈 웰이 되므로, 놓치는 것이 빈 웰보다 훨씬 '
+         + '아까울 때만 쓰세요.',
+    values: { sensitivity: 90 },
+  },
+};
+
+// 감도 슬라이더 → 서버 min_t. app/param_mapping.py 의 sensitivity_to_min_t 와
+// **같은 식이어야 한다.** 어긋나면 UI 힌트가 실제 동작과 다른 값을 말한다.
+// 0~50: 90 → 25,  50~100: 25 → 12   (50 = 서버 기본값 min_t 25)
+function sensitivityToMinT(v) {
+  return v <= 50 ? 90 - (v / 50) * 65 : 25 - ((v - 50) / 50) * 13;
+}
+
+// 실측 곡선 (sample/ 39장 · 접시별 극성 자동 판정 + solidity 0.75 반영 후)
+const SENSITIVITY_HINTS = [
+  [12, '정밀도 63% · 재현율 74%'],
+  [15, '정밀도 70% · 재현율 71%'],
+  [20, '정밀도 80% · 재현율 68%'],
+  [25, '정밀도 86% · 재현율 65%'],
+  [35, '정밀도 94% · 재현율 60%'],
+];
+function sensitivityHint(v) {
+  const t = sensitivityToMinT(v);
+  let best = SENSITIVITY_HINTS[0];
+  for (const h of SENSITIVITY_HINTS) {
+    if (Math.abs(h[0] - t) < Math.abs(best[0] - t)) best = h;
+  }
+  return `min_t ≈ ${t.toFixed(0)} · 실측 ${best[1]}`;
+}
 
 // ============================================================
 // State
@@ -596,6 +715,8 @@ const STATE = {
   imageHeight: 910,
   sample: SAMPLES[0],         // 'sample' 모드에서 선택된 항목
   colonies: [],               // 마지막 검출 결과 (로봇 전송 버튼이 참조)
+  originalSrc: null,          // 원본 이미지 src (좌표 오버레이 보기로 돌아갈 때)
+  resultSrc: null,            // 서버가 표시해 돌려준 이미지 (data URI)
 };
 
 // ============================================================
@@ -604,13 +725,14 @@ const STATE = {
 const el = {
   img:         document.getElementById('preview-img'),
   svg:         document.getElementById('overlay-svg'),
-  wallRect:    document.getElementById('wall-margin-rect'),
-  sizeCircle:  document.getElementById('size-circle'),
-  sizeLabel:   document.getElementById('size-label'),
   coloniesG:   document.getElementById('colonies-group'),
   loading:     document.getElementById('loading'),
   errorBox:    document.getElementById('error-box'),
   statTotal:   document.getElementById('stat-total'),
+  statPick:    document.getElementById('stat-pick'),
+  viewMode:    document.getElementById('view-mode'),
+  workSize:    document.getElementById('work-size'),
+  hintSens:    document.getElementById('hint-sensitivity'),
   legendInfo:  document.getElementById('legend-info'),
   sampleSelect: document.getElementById('sample-select'),
   imageMeta:   document.getElementById('image-meta'),
@@ -623,60 +745,36 @@ const el = {
   btnReset:    document.getElementById('btn-reset'),
   btnApply:    document.getElementById('btn-apply'),
   btnSend:     document.getElementById('btn-send'),
-  splitTouching: document.getElementById('split-touching'),
   plateType:   document.getElementById('plate-type'),
+  polarity:    document.getElementById('polarity'),
 };
 
 // ============================================================
-// 크기 슬라이더 → 백엔드 min_size/max_size 매핑
+// 오버레이 / 보기 전환
 //
-// UI 는 크기 슬라이더 1개만 노출한다. 그러나 백엔드 스펙 (§4.2, operator params) 은
-// min_size / max_size 두 필드를 받는다. 아래 함수가 하나의 값을 두 값으로 벌려준다.
+// 두 가지 보기를 제공한다:
+//   'server'  → 서버가 콜로니를 그려서 돌려준 이미지를 그대로 띄운다.
+//               응답의 annotated_image(base64) 하나로 끝난다.
+//   'overlay' → 원본 위에 응답 좌표로 SVG 원을 그린다. 확대해도 선이 안 깨진다.
 //
-//   min_size = V                        (슬라이더 값 그대로 = "이보다 작으면 무시")
-//   max_size = clamp(V + 55, 75, 100)   (여유롭게 상한을 넉넉히 두되 기본값 유지)
-//
-// 기본값 V=20 일 때 min=20, max=75 → 기존 UI 의 두-슬라이더 기본값과 정확히 동일.
-// 슬라이더가 위로 올라가면 큰 콜로니 위주로만 걸러진다.
+// 좌표(colonies)는 항상 **원본 픽셀** 기준이고, 서버 이미지는 전송을 위해
+// 축소될 수 있으므로 겹쳐 그릴 때는 annotated_image_scale 을 곱해야 한다.
+// 여기서는 SVG viewBox 를 원본 크기로 두므로 좌표를 그대로 쓸 수 있다.
 // ============================================================
-function sizeSliderToBackend(v) {
-  return { min_size: v, max_size: Math.min(100, Math.max(v + 55, 75)) };
-}
-function sizeSliderToRadius(v) { return 1 + Math.pow(v / 100, 2) * 9; }
-function edgeToMarginPx(v)     { return v * 1.5; }
-
-// ============================================================
-// 오버레이 갱신
-// ============================================================
-function updateWallMarginRect(sliderVal) {
-  const px = edgeToMarginPx(sliderVal);
-  el.wallRect.setAttribute('x', px);
-  el.wallRect.setAttribute('y', px);
-  el.wallRect.setAttribute('width',  Math.max(0, STATE.imageWidth  - 2 * px));
-  el.wallRect.setAttribute('height', Math.max(0, STATE.imageHeight - 2 * px));
-}
-
-function updateSizeCircle(sliderVal) {
-  el.sizeCircle.setAttribute('r', sizeSliderToRadius(sliderVal));
-}
-
-/**
- * 이미지 크기 변경 시 SVG viewBox와 오버레이 참조점을 재배치.
- * 크기 참조 원과 라벨을 이미지 상단 좌측 코너에 놓는다.
- */
 function relayoutOverlays() {
-  const w = STATE.imageWidth, h = STATE.imageHeight;
-  el.svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+  el.svg.setAttribute('viewBox', `0 0 ${STATE.imageWidth} ${STATE.imageHeight}`);
+}
 
-  const cx = w * 0.10;
-  const cy = h * 0.22;
-  el.sizeCircle.setAttribute('cx', cx);
-  el.sizeCircle.setAttribute('cy', cy);
-  el.sizeLabel.setAttribute('x', cx);
-  el.sizeLabel.setAttribute('y', cy - 55);
-
-  // 벽 여백 재계산 (현재 슬라이더 값 기준)
-  updateWallMarginRect(+document.querySelector('[data-field="edge_margin"]').value);
+function applyViewMode() {
+  const mode = el.viewMode.value;
+  const hasResult = !!STATE.resultSrc;
+  if (mode === 'server' && hasResult) {
+    el.img.src = STATE.resultSrc;
+    el.svg.style.display = 'none';
+  } else {
+    if (STATE.originalSrc) el.img.src = STATE.originalSrc;
+    el.svg.style.display = '';
+  }
 }
 
 // ============================================================
@@ -685,17 +783,30 @@ function relayoutOverlays() {
 // 정책: pickable 여부와 무관하게 전부 초록 원으로 그린다.
 // 이 UI 에서는 "검출된 것 = 피킹 대상" 이므로 색깔로 구분할 이유가 없다.
 // ============================================================
+// 서버가 그려주는 이미지와 **같은 모양**을 쓴다 (app/annotate.py 의 marker).
+// 두 겹이 다른 모양이면 「보기」를 전환할 때마다 화면이 바뀌어 혼란스럽다.
+// 네모인 이유: 콜로니가 원형이라 원을 그리면 윤곽선과 겹쳐 표시인지 콜로니인지
+// 구분이 안 된다. 직선 테두리는 한천의 원형·불규칙 패턴과 형태가 달라 눈에 띈다.
+const MARKER_PAD = 1.35;   // app/config.py 의 DRAW_MARKER_PAD 와 같은 값
+
 function renderColonies(colonies) {
   const frag = document.createDocumentFragment();
+  const svgNS = 'http://www.w3.org/2000/svg';
+  // 선 두께를 이미지 크기에 비례시킨다. 고정값이면 4000px 접시에서 실오라기가
+  // 되고 1000px 접시에서는 콜로니를 덮는다.
+  const th = Math.max(2, Math.round(Math.max(STATE.imageWidth,
+                                             STATE.imageHeight) / 600));
   for (const c of colonies) {
-    const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-    circle.setAttribute('cx', c.x);
-    circle.setAttribute('cy', c.y);
-    circle.setAttribute('r', Math.max(c.radius, 3));
-    circle.setAttribute('fill', 'none');
-    circle.setAttribute('stroke', '#22c55e');
-    circle.setAttribute('stroke-width', '4');
-    frag.appendChild(circle);
+    const rad = Math.max(c.radius * MARKER_PAD, th * 3);
+    const el2 = document.createElementNS(svgNS, 'rect');
+    el2.setAttribute('x', c.x - rad);
+    el2.setAttribute('y', c.y - rad);
+    el2.setAttribute('width', rad * 2);
+    el2.setAttribute('height', rad * 2);
+    el2.setAttribute('fill', 'none');
+    el2.setAttribute('stroke', '#22c55e');
+    el2.setAttribute('stroke-width', th);
+    frag.appendChild(el2);
   }
   el.coloniesG.replaceChildren(frag);
 }
@@ -719,9 +830,17 @@ function showError(msg) {
   hideLoading();
   setSendButton(0, false);
 }
-function updateStats(total, elapsedSec) {
+function updateStats(total, pickable, elapsedSec, note) {
   el.statTotal.textContent = total;
-  el.legendInfo.textContent = `검출 완료 (${total}개) · ${elapsedSec.toFixed(1)}초`;
+  el.statPick.textContent = pickable;
+  // 기본값에서는 검출 = 피킹 대상이므로 같은 수를 두 번 보여주지 않는다.
+  // 피킹 필터를 켜서 두 수가 갈릴 때만 노출한다.
+  const split = pickable !== total;
+  document.getElementById('stat-pick-wrap').style.display = split ? '' : 'none';
+  document.getElementById('legend-fp').style.display = split ? '' : 'none';
+  el.legendInfo.textContent =
+    (split ? `검출 ${total}개 · 피킹 대상 ${pickable}개` : `검출 ${total}개`) +
+    ` · ${elapsedSec.toFixed(1)}초` + (note ? ` · ${note}` : '');
   el.legendInfo.style.color = 'var(--muted)';
 }
 function setSendButton(count, enabled) {
@@ -760,8 +879,9 @@ function renderImageMeta(sample, missing) {
   let html = parts.join(' · ');
   if (missing) {
     html += `<span class="miss">이미지를 찾을 수 없습니다 — <code>sample/</code> 디렉터리가 필요합니다 (git 미포함)</span>`;
-  } else if (Math.max(sample.w, sample.h) > HIRES_WARN_PX) {
-    html += `<span class="warn">고해상도 — 기본 파라미터는 1350×910 기준이라 과검출됩니다. 콜로니 크기를 올려보세요.</span>`;
+  } else if (sample.group === 'fixture') {
+    // 이 픽스처만 4×2 몰딩 웰 플레이트다. 나머지 sample/* 는 원형 페트리 접시.
+    html += `<span class="warn">이 이미지는 <b>웰 플레이트</b>입니다 — 용기 종류를 「웰 플레이트」로 바꾸세요.</span>`;
   }
   el.imageMeta.innerHTML = html;
 }
@@ -781,6 +901,7 @@ function loadSampleImage(index) {
   clearColonies();
   resetStats();
   renderImageMeta(sample, false);
+  STATE.originalSrc = '../../' + sample.path;
 
   return new Promise(resolve => {
     el.img.onload = () => {
@@ -816,6 +937,7 @@ function loadUploadedFile(file) {
       const commaIdx = dataUrl.indexOf(',');
       STATE.imageSource = 'upload';
       STATE.imageBase64 = commaIdx >= 0 ? dataUrl.slice(commaIdx + 1) : dataUrl;
+      STATE.originalSrc = dataUrl;
       el.img.onerror = null;
       el.img.src = dataUrl;
       el.img.onload = () => {
@@ -839,25 +961,38 @@ function loadUploadedFile(file) {
 
 function resetStats() {
   el.statTotal.textContent = '—';
+  el.statPick.textContent = '—';
   STATE.colonies = [];
+  STATE.resultSrc = null;      // 새 이미지를 고르면 이전 결과 이미지는 버린다
+  el.svg.style.display = '';
   setSendButton(0, false);
 }
 
 // ============================================================
 // API 호출: POST /detect
 // ============================================================
+function sliderVal(field) {
+  return +document.querySelector(`[data-field="${field}"]`).value;
+}
+
 function buildPayload() {
-  const sizeV = +document.querySelector('[data-field="size"]').value;
-  const { min_size, max_size } = sizeSliderToBackend(sizeV);
   const payload = {
-    sensitivity:    +document.querySelector('[data-field="sensitivity"]').value,
-    min_size,
-    max_size,
-    edge_margin:    +document.querySelector('[data-field="edge_margin"]').value,
-    split_touching: el.splitTouching.checked,
-    // plate_type 은 §5 백엔드(app/plates/*) 구현 후에만 실효.
-    // 그 전까지 서버는 Pydantic extra='ignore' 로 무시.
-    plate_type:     el.plateType.value,
+    // method 는 보내지 않는다 — 서버 기본값(blob)을 쓴다. tophat 은 개발자용이고
+    // 페트리 접시에서 정밀도가 0.85%로 떨어져 UI에서 고를 수 있으면 안 된다.
+    plate_type:  el.plateType.value,
+    polarity:    el.polarity.value,
+    // 추상 감도(0~100)를 그대로 보낸다. 서버가 min_t 로 매핑한다.
+    sensitivity: sliderVal('sensitivity'),
+    // 크기 창은 접시 지름 대비 **비율**. 슬라이더는 %라 100으로 나눈다.
+    min_diam_frac: sliderVal('min_size') / 100,
+    // 색 보정 슬라이더는 10배 정수 (10 = 1.0배 = 끔)
+    colour_credit: sliderVal('colour_credit') / 10,
+    work_size:     +el.workSize.value,
+    // pick_radius_max 도 보내지 않는다 — 피킹 필터는 서버에서 껐다
+    // (검출된 것 = 피킹 대상). 여기서 값을 보내면 필터가 조용히 켜진다.
+    // 좌표와 표시 이미지를 한 응답에 함께 받는다.
+    return_image:    true,
+    image_max_width: 1600,
   };
   if (STATE.imageSource === 'sample') {
     payload.image_path = STATE.sample.path;
@@ -872,7 +1007,17 @@ async function runDetect() {
   clearColonies();
   setSendButton(0, false);
   const server = el.serverUrl.value.trim().replace(/\/$/, '');
-  const payload = buildPayload();
+
+  // 페이로드 조립도 try 안에서 한다. 밖에 두면 여기서 난 예외(예: 컨트롤 id가
+  // 바뀌어 el.xxx 가 null)가 showError 를 못 거쳐 로딩 표시가 영원히 남고,
+  // 요청은 나가지도 않아 "서버가 먹통"처럼 보인다. 실제로 그런 적이 있다.
+  let payload;
+  try {
+    payload = buildPayload();
+  } catch (e) {
+    showError(`요청을 만들지 못했습니다: ${e.message} (UI 버그 — 콘솔 확인)`);
+    throw e;   // 콘솔에 스택을 남긴다
+  }
   const startedAt = performance.now();
 
   let resp;
@@ -909,8 +1054,21 @@ async function runDetect() {
   const colonies = data.colonies || [];
   STATE.colonies = colonies;
   renderColonies(colonies);
-  updateStats(data.count, (performance.now() - startedAt) / 1000);
-  setSendButton(colonies.length, colonies.length > 0);
+
+  // 서버가 표시해 돌려준 이미지
+  STATE.resultSrc = data.annotated_image
+    ? `data:image/jpeg;base64,${data.annotated_image}`
+    : null;
+  applyViewMode();
+
+  const pickable = colonies.filter(c => c.pickable).length;
+  // 검출은 됐는데 피킹 대상이 0이면 원인이 대체로 피킹 반지름 상한이다.
+  // 조용히 0을 보여주면 오퍼레이터가 검출 실패로 오해한다.
+  const note = (colonies.length > 0 && pickable === 0)
+    ? '피킹 대상 0 — 피킹 최대 반지름을 올려보세요'
+    : '';
+  updateStats(data.count, pickable, (performance.now() - startedAt) / 1000, note);
+  setSendButton(pickable, pickable > 0);
 }
 
 /**
@@ -918,7 +1076,8 @@ async function runDetect() {
  * 실제 로봇 통합은 이 UI 밖 — 여기서는 좌표 요약을 콘솔에 찍고 알림만.
  */
 function sendToRobot() {
-  const cs = STATE.colonies;
+  // 검출 전체가 아니라 **피킹 대상만** 보낸다 — 로봇이 집어도 되는 것만.
+  const cs = STATE.colonies.filter(c => c.pickable);
   if (!cs.length) return;
   const coords = cs.map(c => ({ x: Math.round(c.x), y: Math.round(c.y), r: Math.round(c.radius) }));
   console.log(`[MOCKUP] 로봇 전송 좌표 ${coords.length}개:`, coords);
@@ -930,16 +1089,23 @@ function sendToRobot() {
 // ============================================================
 // 이벤트 바인딩
 // ============================================================
+function sliderLabel(field, val) {
+  if (field === 'colour_credit') return (val / 10).toFixed(1) + '배';
+  if (field === 'min_size') return val === 0 ? '제한 없음' : val + '% 이상';
+  return String(val);
+}
+
 document.querySelectorAll('input[type="range"]').forEach(input => {
   input.addEventListener('input', e => {
-    const target = document.getElementById(e.target.dataset.target);
-    if (target) target.textContent = e.target.value;
     const field = e.target.dataset.field;
     const val = +e.target.value;
-    if (field === 'edge_margin') updateWallMarginRect(val);
-    if (field === 'size')        updateSizeCircle(val);
+    const target = document.getElementById(e.target.dataset.target);
+    if (target) target.textContent = sliderLabel(field, val);
+    if (field === 'sensitivity') el.hintSens.textContent = sensitivityHint(val);
   });
 });
+
+el.viewMode.addEventListener('change', applyViewMode);
 
 el.sampleSelect.addEventListener('change', e => loadSampleImage(+e.target.value));
 el.btnPrev.addEventListener('click', () => stepSample(-1));
@@ -959,23 +1125,39 @@ el.serverUrl.addEventListener('input', () => {
     .replace(/\/$/, '');
 });
 
-el.btnReset.addEventListener('click', () => {
+function applyDefaults(overrides) {
   const map = {
-    'v-sensitivity': DEFAULTS.sensitivity,
-    'v-size':        DEFAULTS.size,
-    'v-edge-margin': DEFAULTS.edge_margin,
+    sensitivity:     DEFAULTS.sensitivity,
+    min_size:        DEFAULTS.min_size,
+    colour_credit:   DEFAULTS.colour_credit,
+    ...(overrides || {}),
   };
   document.querySelectorAll('input[type="range"]').forEach(input => {
-    const k = input.dataset.target;
-    if (k in map) {
-      input.value = map[k];
-      document.getElementById(k).textContent = map[k];
+    const field = input.dataset.field;
+    if (field in map) {
+      input.value = map[field];
+      const target = document.getElementById(input.dataset.target);
+      if (target) target.textContent = sliderLabel(field, map[field]);
     }
   });
-  el.splitTouching.checked = DEFAULTS.split_touching;
-  el.plateType.value       = DEFAULTS.plate_type;
-  updateWallMarginRect(DEFAULTS.edge_margin);
-  updateSizeCircle(DEFAULTS.size);
+  el.plateType.value = DEFAULTS.plate_type;
+  el.polarity.value  = (overrides && overrides.polarity) || DEFAULTS.polarity;
+  el.workSize.value  = (overrides && overrides.work_size) || DEFAULTS.work_size;
+  el.hintSens.textContent = sensitivityHint(map.sensitivity);
+}
+
+function applyPreset(name) {
+  const p = PRESETS[name] || PRESETS.default;
+  applyDefaults(p.values);
+  document.getElementById('preset-note').textContent = p.label;
+}
+
+document.getElementById('preset').addEventListener('change',
+  e => applyPreset(e.target.value));
+
+el.btnReset.addEventListener('click', () => {
+  document.getElementById('preset').value = 'default';
+  applyPreset('default');
 });
 
 el.btnApply.addEventListener('click', runDetect);
@@ -986,6 +1168,7 @@ el.btnSend.addEventListener('click', sendToRobot);
 // ============================================================
 (async function init() {
   buildSampleSelect();
+  applyPreset('default');
   await loadSampleImage(0);
 })();
 

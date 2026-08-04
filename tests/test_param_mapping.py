@@ -46,8 +46,15 @@ def test_max_size_extremes():
 
 
 def test_edge_default_matches_current_pick_edge_margin():
+    """슬라이더 0이 서버 기본값(여백 없음)에 앵커돼야 한다.
+
+    피킹 필터는 기본으로 껐다(config 주석 참조) — 검출된 것 = 피킹 대상.
+    그래서 앵커가 예전 슬라이더 40(=60px)에서 0(=0px)으로 옮겨졌다.
+    UI 기본값과 서버 기본값이 어긋나면 UI가 매번 덮어써서 조용히 필터가
+    켜진다(실제로 pick_radius_max 에서 겪은 문제).
+    """
     from app import config
-    assert edge_to_margin_px(40) == config.PICK_EDGE_MARGIN
+    assert edge_to_margin_px(0) == config.PICK_EDGE_MARGIN
 
 
 def test_edge_extremes():
