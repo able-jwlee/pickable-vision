@@ -155,7 +155,20 @@ def _post_detect(**abstract):
     ).json()
 
 
+def _post_tophat(**abstract):
+    """tophat 전용 knob(min_area/invert/threshold_offset)을 검증할 때 쓴다.
+
+    기본 경로는 method="blob"이고 이 knob들을 무시하므로, 레거시 knob의
+    방향성을 확인하는 테스트는 경로를 명시해야 한다.
+    """
+    return client.post(
+        "/detect",
+        json={"image_path": SAMPLE_PATH, "method": "tophat", **abstract},
+    ).json()
+
+
 def test_sensitivity_direction_more_sensitive_finds_more():
+    """감도 방향성은 두 경로 모두에서 성립해야 한다(blob은 min_t로 매핑)."""
     strict = _post_detect(sensitivity=0)["count"]
     permissive = _post_detect(sensitivity=100)["count"]
     assert permissive > strict, (
@@ -163,9 +176,18 @@ def test_sensitivity_direction_more_sensitive_finds_more():
     )
 
 
+def test_sensitivity_direction_tophat_path():
+    strict = _post_tophat(sensitivity=0)["count"]
+    permissive = _post_tophat(sensitivity=100)["count"]
+    assert permissive > strict, (
+        f"expected permissive({permissive}) > strict({strict})"
+    )
+
+
 def test_min_size_direction_stricter_finds_fewer():
-    permissive = _post_detect(min_size=0)["count"]
-    strict = _post_detect(min_size=100)["count"]
+    # min_size는 tophat 전용 knob (min_area로 매핑)
+    permissive = _post_tophat(min_size=0)["count"]
+    strict = _post_tophat(min_size=100)["count"]
     assert strict < permissive, (
         f"expected strict({strict}) < permissive({permissive})"
     )

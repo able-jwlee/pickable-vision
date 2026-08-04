@@ -50,6 +50,55 @@ def draw_pick_targets(
     return draw_colonies(img, [(c.x, c.y, c.radius) for c in colonies])
 
 
+def draw_for_response(
+    img: np.ndarray,
+    colonies: list,
+    mode: str = "all",
+    max_width: int = 0,
+    marker: str = "square",
+) -> tuple[np.ndarray, float]:
+    """응답에 실어 보낼 표시 이미지와 **축소 배율**을 반환한다.
+
+    (표시 이미지, scale) — scale은 원본 대비 배율이다. 응답의 콜로니 좌표는
+    항상 **원본 픽셀** 기준이므로, 클라이언트가 축소 이미지 위에 좌표를 겹치려면
+    좌표에 이 scale을 곱해야 한다.
+
+    먼저 축소한 뒤 그린다. 원본에 그린 다음 축소하면 선이 1px 아래로 얇아져
+    사실상 사라진다. 선 두께도 이미지 크기에 비례시켜 어느 해상도에서든 보이게 한다.
+
+    marker="square" (기본) 는 정사각 테두리, "circle" 은 원을 그린다.
+    네모가 기본인 이유: 콜로니 자체가 원형이라 원을 그리면 윤곽선과 겹쳐 어디가
+    표시고 어디가 콜로니인지 구분이 어렵다. 직선 테두리는 배경의 원형·불규칙
+    패턴과 형태가 달라 한천 텍스처 위에서도 눈에 띈다. 콜로니 지름 대비 여유를
+    두어 콜로니를 가리지 않게 한다.
+    """
+    h, w = img.shape[:2]
+    scale = 1.0
+    if max_width and w > max_width:
+        scale = max_width / w
+        img = cv2.resize(img, (max_width, max(1, int(h * scale))),
+                         interpolation=cv2.INTER_AREA)
+
+    out = img.copy()
+    th = max(1, int(round(max(out.shape[:2]) / 600)))
+    pick_only = mode == "pick"
+    for c in colonies:
+        if pick_only and not getattr(c, "pickable", False):
+            continue
+        colour = (config.DRAW_PICK_COLOR if getattr(c, "pickable", False)
+                  else config.DRAW_COLOR)
+        cx, cy = int(c.x * scale), int(c.y * scale)
+        # 콜로니를 가리지 않게 반지름에 여유를 준다. 작은 콜로니는 반지름이
+        # 1~2px 이라 그대로 그리면 점이 되므로 최소 크기를 둔다.
+        rad = max(int(c.radius * scale * config.DRAW_MARKER_PAD), th * 3)
+        if marker == "circle":
+            cv2.circle(out, (cx, cy), rad, colour, th)
+        else:
+            cv2.rectangle(out, (cx - rad, cy - rad), (cx + rad, cy + rad),
+                          colour, th)
+    return out, scale
+
+
 def save_annotated(img: np.ndarray, out_dir: str, name: str) -> Path:
     """이미지를 out_dir/name 으로 저장하고 저장 경로를 반환. 폴더 없으면 생성.
 

@@ -44,3 +44,15 @@ def encode_png_base64(img: np.ndarray) -> str:
     if not ok:
         raise ValueError("could not encode image to png")
     return base64.b64encode(buf).decode()
+
+
+def encode_jpeg_base64(img: np.ndarray, quality: int = 85) -> str:
+    """BGR 이미지를 JPEG base64 문자열로 인코드.
+
+    4000px급 원본을 PNG로 돌려주면 응답이 수십 MB가 되므로, 응답에 이미지를
+    실어 보낼 때는 JPEG가 기본이다.
+    """
+    ok, buf = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, int(quality)])
+    if not ok:
+        raise ValueError("could not encode image to jpeg")
+    return base64.b64encode(buf).decode()
