@@ -1,0 +1,654 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>PICKABLE · 콜로니 라벨러</title>
+<style>
+  :root {
+    --bg: #0f1218;
+    --panel: #171b23;
+    --panel-2: #1f242e;
+    --border: #2a303c;
+    --text: #e6e8ec;
+    --muted: #8b93a3;
+    --accent: #4ade80;
+    --danger: #f87171;
+    --box: #22c55e;
+    --box-sel: #facc15;
+    --draw: #60a5fa;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans KR", sans-serif;
+    font-size: 13px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  header {
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    padding: 10px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    flex: 0 0 auto;
+  }
+  .controls {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .hint {
+    color: var(--muted);
+    font-size: 11px;
+    line-height: 1.5;
+  }
+  .hint kbd {
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 1px 5px;
+    font-family: inherit;
+    font-size: 10px;
+  }
+
+  button, select, .stat-chip {
+    padding: 6px 10px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--panel-2);
+    color: var(--text);
+    font-size: 12px;
+    font-family: inherit;
+    cursor: pointer;
+  }
+  button:hover:not(:disabled) { background: #262b36; }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  button.primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #06110a;
+    font-weight: 600;
+  }
+  button.primary:hover:not(:disabled) { background: #6ee79a; }
+  button.danger {
+    background: transparent;
+    border-color: #a13232;
+    color: var(--danger);
+  }
+  select { min-width: 130px; }
+  .stat-chip {
+    cursor: default;
+    background: transparent;
+    color: var(--muted);
+  }
+  .stat-chip b { color: var(--text); font-variant-numeric: tabular-nums; }
+  .sep { flex: 1; }
+
+  main {
+    flex: 1;
+    min-height: 0;
+    background: #0a0c11;
+    position: relative;
+    overflow: hidden;
+    cursor: crosshair;
+  }
+  main.panning { cursor: grabbing; }
+  main.no-image { cursor: default; }
+
+  #canvas-inner {
+    position: absolute;
+    top: 0; left: 0;
+    transform-origin: 0 0;
+  }
+  #canvas-inner img {
+    display: block;
+    user-select: none;
+    -webkit-user-drag: none;
+  }
+  #canvas-inner svg {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+  }
+  #canvas-inner svg rect { pointer-events: auto; cursor: pointer; }
+  #draw-rect { pointer-events: none !important; cursor: crosshair; }
+
+  .empty-note {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    color: var(--muted);
+    font-size: 14px;
+    text-align: center;
+    line-height: 1.8;
+  }
+  .empty-note button { margin-top: 8px; }
+
+  .toast {
+    position: absolute;
+    bottom: 20px; left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0,0,0,0.85);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 10px 16px;
+    border-radius: 6px;
+    font-size: 12px;
+    opacity: 0;
+    transition: opacity 0.2s;
+    pointer-events: none;
+    z-index: 100;
+  }
+  .toast.show { opacity: 1; }
+  .toast.error { border-color: var(--danger); color: var(--danger); }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="controls">
+    <button id="btn-load-image">이미지 열기…</button>
+    <input type="file" id="file-image" accept="image/*" hidden>
+
+    <button id="btn-load-json">기존 라벨 열기…</button>
+    <input type="file" id="file-json" accept=".json,application/json" hidden>
+
+    <button id="btn-export" class="primary" disabled>라벨 저장 (JSON)</button>
+
+    <span class="sep"></span>
+
+    <label class="stat-chip">클래스
+      <select id="class-select" style="margin-left:6px;"></select>
+    </label>
+    <span class="stat-chip">박스 <b id="cur-count">0</b></span>
+    <span class="stat-chip">배율 <b id="cur-zoom">100%</b></span>
+    <button id="btn-fit" disabled>화면 맞춤</button>
+    <button id="btn-undo" disabled>↶ 되돌리기</button>
+    <button id="btn-clear" class="danger" disabled>전체 삭제</button>
+  </div>
+  <div class="hint">
+    <b>사용법.</b>
+    이미지 위에서 <b>좌클릭 드래그</b> = 새 박스 그리기 ·
+    박스 <b>클릭</b> = 선택 · <kbd>Del</kbd>/<kbd>Backspace</kbd> = 선택 박스 삭제 ·
+    <kbd>Ctrl</kbd>+<kbd>Z</kbd> = 되돌리기 ·
+    <kbd>Ctrl</kbd>+휠 = 확대/축소 ·
+    <kbd>Shift</kbd>+드래그 또는 <b>가운데 버튼 드래그</b> = 이동 ·
+    <kbd>Esc</kbd> = 선택 해제 · <kbd>F</kbd> = 화면 맞춤.
+    <b>x/y 는 박스 좌상단</b> (sample/*.json 포맷과 동일).
+  </div>
+</header>
+
+<main id="main" class="no-image">
+  <div id="canvas-inner">
+    <img id="img" alt="">
+    <svg id="svg" xmlns="http://www.w3.org/2000/svg">
+      <g id="boxes-group"></g>
+      <rect id="draw-rect" fill="none" stroke="#60a5fa" stroke-width="2"
+            stroke-dasharray="6,4" style="display:none"/>
+    </svg>
+  </div>
+  <div class="empty-note" id="empty-note">
+    <div>이미지가 없습니다.</div>
+    <button onclick="document.getElementById('btn-load-image').click()">이미지 열기</button>
+  </div>
+  <div class="toast" id="toast"></div>
+</main>
+
+<script>
+'use strict';
+
+// ============================================================
+// 클래스 후보 (sample/ 에서 관찰된 균종 + generic 'colony')
+// 파일에 존재하지 않는 클래스가 로드되면 자동으로 목록에 추가된다.
+// ============================================================
+const DEFAULT_CLASSES = [
+  'colony', 'B.subtilis', 'S.aureus', 'E.coli',
+  'C.albicans', 'P.aeruginosa',
+];
+
+// ============================================================
+// State
+// ============================================================
+const STATE = {
+  imageWidth:  0,
+  imageHeight: 0,
+  imageName:   '',
+  imageBackground: 'well_plate',   // JSON 의 background 필드
+  boxes:       [],                 // {id, x, y, width, height, cls}
+  nextId:      1,
+  selectedId:  null,
+  history:     [],                 // 되돌리기 스냅샷 (JSON 문자열, 최대 50개)
+  zoom:        1,
+  panX:        0,
+  panY:        0,
+  drawing:     null,               // {startX, startY} (image 좌표)
+  panning:     null,               // {startClientX, startClientY, startPanX, startPanY}
+};
+
+const HISTORY_LIMIT = 50;
+
+// ============================================================
+// DOM refs
+// ============================================================
+const el = {
+  main:        document.getElementById('main'),
+  inner:       document.getElementById('canvas-inner'),
+  img:         document.getElementById('img'),
+  svg:         document.getElementById('svg'),
+  boxesG:      document.getElementById('boxes-group'),
+  drawRect:    document.getElementById('draw-rect'),
+  emptyNote:   document.getElementById('empty-note'),
+  toast:       document.getElementById('toast'),
+  btnLoadImg:  document.getElementById('btn-load-image'),
+  btnLoadJson: document.getElementById('btn-load-json'),
+  btnExport:   document.getElementById('btn-export'),
+  btnFit:      document.getElementById('btn-fit'),
+  btnUndo:     document.getElementById('btn-undo'),
+  btnClear:    document.getElementById('btn-clear'),
+  fileImage:   document.getElementById('file-image'),
+  fileJson:    document.getElementById('file-json'),
+  classSelect: document.getElementById('class-select'),
+  curCount:    document.getElementById('cur-count'),
+  curZoom:     document.getElementById('cur-zoom'),
+};
+
+// ============================================================
+// Helpers
+// ============================================================
+function showToast(msg, kind) {
+  el.toast.textContent = msg;
+  el.toast.className = 'toast show' + (kind === 'error' ? ' error' : '');
+  clearTimeout(showToast._t);
+  showToast._t = setTimeout(() => { el.toast.className = 'toast'; }, 2400);
+}
+
+function screenToImage(clientX, clientY) {
+  const rect = el.main.getBoundingClientRect();
+  const containerX = clientX - rect.left;
+  const containerY = clientY - rect.top;
+  return {
+    x: (containerX - STATE.panX) / STATE.zoom,
+    y: (containerY - STATE.panY) / STATE.zoom,
+  };
+}
+
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+function pushHistory() {
+  STATE.history.push(JSON.stringify(STATE.boxes));
+  if (STATE.history.length > HISTORY_LIMIT) STATE.history.shift();
+  el.btnUndo.disabled = STATE.history.length === 0;
+}
+
+function undo() {
+  if (!STATE.history.length) return;
+  STATE.boxes = JSON.parse(STATE.history.pop());
+  STATE.selectedId = null;
+  el.btnUndo.disabled = STATE.history.length === 0;
+  renderBoxes();
+  updateCount();
+}
+
+// ============================================================
+// 클래스 드롭다운
+// ============================================================
+function buildClassSelect(extraClasses) {
+  const all = new Set(DEFAULT_CLASSES);
+  (extraClasses || []).forEach(c => all.add(c));
+  const cur = el.classSelect.value || 'colony';
+  el.classSelect.innerHTML = '';
+  for (const c of all) {
+    const opt = document.createElement('option');
+    opt.value = c;
+    opt.textContent = c;
+    el.classSelect.appendChild(opt);
+  }
+  el.classSelect.value = all.has(cur) ? cur : 'colony';
+}
+
+// ============================================================
+// 뷰포트 변환 (pan + zoom)
+// ============================================================
+function applyTransform() {
+  el.inner.style.transform =
+    `translate(${STATE.panX}px, ${STATE.panY}px) scale(${STATE.zoom})`;
+  el.curZoom.textContent = Math.round(STATE.zoom * 100) + '%';
+}
+
+function fitToView() {
+  if (!STATE.imageWidth || !STATE.imageHeight) return;
+  const rect = el.main.getBoundingClientRect();
+  const zX = rect.width  / STATE.imageWidth;
+  const zY = rect.height / STATE.imageHeight;
+  STATE.zoom = Math.min(zX, zY) * 0.98;
+  STATE.panX = (rect.width  - STATE.imageWidth  * STATE.zoom) / 2;
+  STATE.panY = (rect.height - STATE.imageHeight * STATE.zoom) / 2;
+  applyTransform();
+}
+
+function zoomAt(clientX, clientY, factor) {
+  const rect = el.main.getBoundingClientRect();
+  const cx = clientX - rect.left;
+  const cy = clientY - rect.top;
+  const newZoom = clamp(STATE.zoom * factor, 0.05, 20);
+  const ratio = newZoom / STATE.zoom;
+  STATE.panX = cx - (cx - STATE.panX) * ratio;
+  STATE.panY = cy - (cy - STATE.panY) * ratio;
+  STATE.zoom = newZoom;
+  applyTransform();
+}
+
+// ============================================================
+// 이미지 로드
+// ============================================================
+function loadImage(dataUrl, name) {
+  el.img.onload = () => {
+    STATE.imageWidth  = el.img.naturalWidth;
+    STATE.imageHeight = el.img.naturalHeight;
+    STATE.imageName   = name;
+    el.svg.setAttribute('width',  STATE.imageWidth);
+    el.svg.setAttribute('height', STATE.imageHeight);
+    el.svg.setAttribute('viewBox', `0 0 ${STATE.imageWidth} ${STATE.imageHeight}`);
+    el.img.style.width  = STATE.imageWidth  + 'px';
+    el.img.style.height = STATE.imageHeight + 'px';
+    el.emptyNote.style.display = 'none';
+    el.main.classList.remove('no-image');
+    fitToView();
+    // 이미지가 바뀌면 기존 라벨은 유효성이 사라진 것으로 간주하지 않는다 —
+    // 사용자가 라벨 → 이미지 순으로 열 수도 있으므로 그대로 둔다. 다만 UI 는 갱신.
+    renderBoxes();
+    updateCount();
+    enableControls();
+    showToast(`${name} 로드 (${STATE.imageWidth}×${STATE.imageHeight})`);
+  };
+  el.img.onerror = () => showToast('이미지 로드 실패', 'error');
+  el.img.src = dataUrl;
+}
+
+function handleImageFile(file) {
+  const reader = new FileReader();
+  reader.onload = () => loadImage(reader.result, file.name);
+  reader.onerror = () => showToast('파일을 읽을 수 없습니다', 'error');
+  reader.readAsDataURL(file);
+}
+
+// ============================================================
+// 라벨 JSON 로드/저장
+// ============================================================
+function handleJsonFile(file) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    let data;
+    try { data = JSON.parse(reader.result); }
+    catch { return showToast('JSON 파싱 실패', 'error'); }
+    if (!Array.isArray(data.labels)) {
+      return showToast('labels 배열이 없습니다', 'error');
+    }
+    pushHistory();
+    STATE.boxes = data.labels.map(L => ({
+      id: L.id || nextId(),
+      x: +L.x, y: +L.y, width: +L.width, height: +L.height,
+      cls: L.class || 'colony',
+    }));
+    STATE.nextId = STATE.boxes.reduce((m, b) => Math.max(m, b.id), 0) + 1;
+    STATE.imageBackground = data.background || STATE.imageBackground;
+    STATE.selectedId = null;
+    const extraCls = data.classes || STATE.boxes.map(b => b.cls);
+    buildClassSelect(extraCls);
+    renderBoxes();
+    updateCount();
+    showToast(`라벨 ${STATE.boxes.length}개 로드 (${file.name})`);
+  };
+  reader.readAsText(file);
+}
+
+function exportJson() {
+  const classes = Array.from(new Set(STATE.boxes.map(b => b.cls))).sort();
+  const data = {
+    background: STATE.imageBackground,
+    classes,
+    colonies_number: STATE.boxes.length,
+    labels: STATE.boxes.map(b => ({
+      class: b.cls,
+      id: b.id,
+      x: Math.round(b.x),
+      y: Math.round(b.y),
+      width:  Math.round(b.width),
+      height: Math.round(b.height),
+    })),
+  };
+  const blob = new Blob([JSON.stringify(data, null, 2)], {type: 'application/json'});
+  const url  = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  const base = (STATE.imageName || 'labels').replace(/\.[^.]+$/, '');
+  link.href = url;
+  link.download = base + '.json';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+  showToast(`${data.labels.length}개 라벨 저장됨 → ${base}.json`);
+}
+
+function nextId() { return STATE.nextId++; }
+
+// ============================================================
+// 박스 렌더링
+// ============================================================
+function renderBoxes() {
+  const frag = document.createDocumentFragment();
+  for (const b of STATE.boxes) {
+    const r = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    r.setAttribute('x', b.x);
+    r.setAttribute('y', b.y);
+    r.setAttribute('width',  b.width);
+    r.setAttribute('height', b.height);
+    r.setAttribute('fill', 'none');
+    const selected = b.id === STATE.selectedId;
+    r.setAttribute('stroke', selected ? 'var(--box-sel)' : 'var(--box)');
+    r.setAttribute('stroke-width', Math.max(1, 3 / STATE.zoom));
+    if (selected) r.setAttribute('stroke-dasharray', `${8/STATE.zoom},${4/STATE.zoom}`);
+    r.dataset.boxId = String(b.id);
+    r.addEventListener('mousedown', onBoxMouseDown);
+    r.addEventListener('contextmenu', onBoxContextMenu);
+    frag.appendChild(r);
+  }
+  el.boxesG.replaceChildren(frag);
+}
+
+function updateCount() {
+  el.curCount.textContent = STATE.boxes.length;
+  el.btnClear.disabled = STATE.boxes.length === 0;
+  el.btnExport.disabled = STATE.boxes.length === 0;
+}
+
+// ============================================================
+// 상호작용: 그리기 / 팬 / 클릭
+// ============================================================
+function onMainMouseDown(e) {
+  // 팬 우선: Shift+left 또는 middle button
+  if (e.button === 1 || (e.button === 0 && e.shiftKey)) {
+    e.preventDefault();
+    STATE.panning = {
+      startClientX: e.clientX,
+      startClientY: e.clientY,
+      startPanX: STATE.panX,
+      startPanY: STATE.panY,
+    };
+    el.main.classList.add('panning');
+    return;
+  }
+  if (e.button !== 0) return;
+  if (!STATE.imageWidth) return;
+  // 박스 위에서 mousedown 은 onBoxMouseDown 이 stopPropagation
+  const p = screenToImage(e.clientX, e.clientY);
+  if (p.x < 0 || p.y < 0 || p.x > STATE.imageWidth || p.y > STATE.imageHeight) return;
+  STATE.drawing = { startX: p.x, startY: p.y };
+  STATE.selectedId = null;
+  renderBoxes();
+  updateDrawRect(p.x, p.y, 0, 0);
+}
+
+function onMainMouseMove(e) {
+  if (STATE.panning) {
+    STATE.panX = STATE.panning.startPanX + (e.clientX - STATE.panning.startClientX);
+    STATE.panY = STATE.panning.startPanY + (e.clientY - STATE.panning.startClientY);
+    applyTransform();
+    return;
+  }
+  if (!STATE.drawing) return;
+  const p = screenToImage(e.clientX, e.clientY);
+  const x = Math.min(p.x, STATE.drawing.startX);
+  const y = Math.min(p.y, STATE.drawing.startY);
+  const w = Math.abs(p.x - STATE.drawing.startX);
+  const h = Math.abs(p.y - STATE.drawing.startY);
+  updateDrawRect(x, y, w, h);
+}
+
+function onMainMouseUp(e) {
+  if (STATE.panning) {
+    STATE.panning = null;
+    el.main.classList.remove('panning');
+    return;
+  }
+  if (!STATE.drawing) return;
+  const p = screenToImage(e.clientX, e.clientY);
+  const x0 = clamp(Math.min(p.x, STATE.drawing.startX), 0, STATE.imageWidth);
+  const y0 = clamp(Math.min(p.y, STATE.drawing.startY), 0, STATE.imageHeight);
+  const x1 = clamp(Math.max(p.x, STATE.drawing.startX), 0, STATE.imageWidth);
+  const y1 = clamp(Math.max(p.y, STATE.drawing.startY), 0, STATE.imageHeight);
+  STATE.drawing = null;
+  hideDrawRect();
+  // 5px 미만은 실수 클릭으로 무시
+  if (x1 - x0 < 5 || y1 - y0 < 5) return;
+  pushHistory();
+  const box = {
+    id: nextId(),
+    x: x0, y: y0,
+    width:  x1 - x0,
+    height: y1 - y0,
+    cls: el.classSelect.value || 'colony',
+  };
+  STATE.boxes.push(box);
+  STATE.selectedId = box.id;
+  renderBoxes();
+  updateCount();
+}
+
+function updateDrawRect(x, y, w, h) {
+  el.drawRect.setAttribute('x', x);
+  el.drawRect.setAttribute('y', y);
+  el.drawRect.setAttribute('width', w);
+  el.drawRect.setAttribute('height', h);
+  el.drawRect.style.display = '';
+  el.drawRect.setAttribute('stroke-width', Math.max(1, 2 / STATE.zoom));
+  el.drawRect.setAttribute('stroke-dasharray', `${6/STATE.zoom},${4/STATE.zoom}`);
+}
+function hideDrawRect() { el.drawRect.style.display = 'none'; }
+
+function onBoxMouseDown(e) {
+  if (e.button !== 0 || e.shiftKey) return;
+  e.stopPropagation();
+  STATE.selectedId = +e.currentTarget.dataset.boxId;
+  renderBoxes();
+}
+
+function onBoxContextMenu(e) {
+  e.preventDefault();
+  const id = +e.currentTarget.dataset.boxId;
+  pushHistory();
+  STATE.boxes = STATE.boxes.filter(b => b.id !== id);
+  if (STATE.selectedId === id) STATE.selectedId = null;
+  renderBoxes();
+  updateCount();
+}
+
+function onWheel(e) {
+  if (!e.ctrlKey) return;
+  e.preventDefault();
+  zoomAt(e.clientX, e.clientY, e.deltaY < 0 ? 1.15 : 1/1.15);
+}
+
+function onKeyDown(e) {
+  // 입력 필드에 포커스 있으면 단축키 무시 (드롭다운 등)
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+    e.preventDefault(); undo(); return;
+  }
+  if (e.key === 'Delete' || e.key === 'Backspace') {
+    if (STATE.selectedId != null) {
+      e.preventDefault();
+      pushHistory();
+      STATE.boxes = STATE.boxes.filter(b => b.id !== STATE.selectedId);
+      STATE.selectedId = null;
+      renderBoxes();
+      updateCount();
+    }
+    return;
+  }
+  if (e.key === 'Escape') {
+    STATE.selectedId = null;
+    renderBoxes();
+    return;
+  }
+  if (e.key === 'f' || e.key === 'F') { fitToView(); return; }
+}
+
+function enableControls() {
+  el.btnFit.disabled = false;
+}
+
+// ============================================================
+// 이벤트 바인딩
+// ============================================================
+el.btnLoadImg.addEventListener('click', () => el.fileImage.click());
+el.fileImage.addEventListener('change', e => {
+  const f = e.target.files[0];
+  if (f) handleImageFile(f);
+  e.target.value = '';
+});
+el.btnLoadJson.addEventListener('click', () => el.fileJson.click());
+el.fileJson.addEventListener('change', e => {
+  const f = e.target.files[0];
+  if (f) handleJsonFile(f);
+  e.target.value = '';
+});
+el.btnExport.addEventListener('click', exportJson);
+el.btnFit.addEventListener('click', fitToView);
+el.btnUndo.addEventListener('click', undo);
+el.btnClear.addEventListener('click', () => {
+  if (!STATE.boxes.length) return;
+  if (!confirm(`박스 ${STATE.boxes.length}개를 전부 지웁니다. 계속?`)) return;
+  pushHistory();
+  STATE.boxes = [];
+  STATE.selectedId = null;
+  renderBoxes();
+  updateCount();
+});
+
+el.main.addEventListener('mousedown', onMainMouseDown);
+window.addEventListener('mousemove', onMainMouseMove);   // 창 밖으로 나가도 추적
+window.addEventListener('mouseup',   onMainMouseUp);
+el.main.addEventListener('wheel', onWheel, { passive: false });
+el.main.addEventListener('contextmenu', e => {
+  // 캔버스 빈 공간의 우클릭은 브라우저 메뉴만 억제 (박스 우클릭은 onBoxContextMenu 처리)
+  if (e.target === el.main || e.target === el.inner || e.target === el.svg) {
+    e.preventDefault();
+  }
+});
+window.addEventListener('keydown', onKeyDown);
+
+buildClassSelect();
+</script>
+</body>
+</html>
