@@ -34,7 +34,7 @@ def _pickable(**kw):
 
 def test_applied_params_echoes_blob_knobs():
     ap = _detect()["applied_params"]
-    for key in ("method", "plate_type", "min_t", "min_diam_frac",
+    for key in ("plate_type", "min_t", "min_diam_frac",
                 "max_diam_frac", "colour_credit", "work_size",
                 "adaptive_scale", "pick_radius_min", "pick_radius_max",
                 "min_solidity", "min_roundness"):
@@ -139,6 +139,6 @@ def test_out_of_range_params_rejected():
     for bad in ({"min_t": 0.5}, {"min_t": 500}, {"min_diam_frac": 1.5},
                 {"colour_credit": 0.5}, {"colour_credit": 99},
                 {"work_size": 100}, {"work_size": 9999},
-                {"plate_type": "nope"}, {"method": "nope"}):
+                {"plate_type": "nope"}):
         resp = client.post("/detect", json={"image_path": SAMPLES[0], **bad})
         assert resp.status_code == 422, f"{bad} 는 422여야 함"

@@ -29,22 +29,3 @@ def test_real_image_detects_colonies():
     assert body["count"] == len(body["colonies"])
 
 
-def test_real_image_tophat_path_still_detects_many():
-    resp = client.post(
-        "/detect", json={"image": _fixture_b64(), "method": "tophat"}
-    )
-    body = resp.json()
-    # 레거시 경로 하위호환 — 8웰 플레이트에 맞게 튜닝된 경로 (~438개)
-    assert body["count"] > 100
-
-
-def test_real_image_invert_false_detects_fewer():
-    # invert는 tophat 전용 knob — blob 경로는 양극성을 모두 검출하므로 무시한다
-    default = client.post(
-        "/detect", json={"image": _fixture_b64(), "method": "tophat"}
-    ).json()
-    inverted = client.post(
-        "/detect",
-        json={"image": _fixture_b64(), "method": "tophat", "invert": False},
-    ).json()
-    assert inverted["count"] < default["count"]

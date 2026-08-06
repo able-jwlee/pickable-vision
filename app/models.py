@@ -10,17 +10,6 @@ class DetectRequest(BaseModel):
     # image_path는 로컬 튜닝 편의용 — 서버와 파일시스템을 공유할 때만 동작.
     image: str | None = None
     image_path: str | None = None
-    # 검출 경로 선택.
-    #   "blob"   → app/blob_detector.py (기본). 원형 petri 접시 기준으로 튜닝.
-    #              라벨 40장 측정에서 tophat의 정밀도 1.2%/재현율 23.8%를
-    #              90.9%/49.6%로 올렸다.
-    #   "tophat" → 기존 app/detector.py 경로. 4×2 몰딩 8웰 플레이트
-    #              (tests/fixtures/agar_sample.jpg)에 맞게 튜닝돼 있다.
-    #              그 포맷은 정답 라벨이 없어 blob 경로를 검증할 수 없으므로,
-    #              8웰 플레이트를 쓸 때는 이 경로를 명시하는 편이 안전하다.
-    # tophat 전용 knob(invert, tophat_kernel, threshold_offset, min_area, max_area,
-    # min_circularity, mask_walls, split_touching)은 method="blob"에서 무시된다.
-    method: Literal["blob", "tophat"] = "blob"
     # 콜로니가 한천보다 밝은지 어두운지. 오퍼레이터가 눈으로 판단할 수 있다.
     #   "auto" → 양극성 모두 검출 후 병합 (기본, 안전)
     #   "bright"/"dark" → 그 극성만 본다
@@ -92,17 +81,8 @@ class DetectRequest(BaseModel):
     # ------------------------------------------------------------------
     pick_radius_min: float | None = Field(None, ge=0.0)
     pick_radius_max: float | None = Field(None, ge=0.0)
-    min_area: float = Field(config.DEFAULT_MIN_AREA, ge=0.0)
-    max_area: float = Field(config.DEFAULT_MAX_AREA, gt=0.0)
-    min_circularity: float = Field(config.DEFAULT_MIN_CIRCULARITY, ge=0.0, le=1.0)
-    invert: bool = config.DEFAULT_INVERT
-    tophat_kernel: int = config.DEFAULT_TOPHAT_KERNEL
-    # 민감도: 높일수록(양수) 임계값↓ → 흐린/작은 콜로니까지 더 잡음(노이즈↑),
-    # 낮추면(음수) 엄격. 유효 sweet spot 대략 -4~+10 (그 밖은 뭉침/노이즈).
-    threshold_offset: int = Field(config.DEFAULT_THRESHOLD_OFFSET, ge=-50, le=50)
+    # 웰/접시 경계에서 안쪽만 피킹 대상으로 인정할지. False = 경계 제한 없음.
     mask_walls: bool = config.DEFAULT_MASK_WALLS
-    # true면 붙은 콜로니를 watershed로 분리(밀집 구간 재현율↑, 과분할 위험). 기본 on.
-    split_touching: bool = config.DEFAULT_SPLIT_TOUCHING
     # 주어지면 피킹 후보(pickable) 중 점수 상위 N개만 후보로 남김 (예: 96핀 → 96)
     pick_top_n: int | None = None
     # true면 콜로니를 표시한 이미지를 vision/output/ 에 저장 (로컬 확인용)
@@ -127,19 +107,11 @@ class DetectRequest(BaseModel):
     # 어느 쪽이든 응답 JSON의 colonies/pickable/score는 동일하게 전부 반환된다.
     annotate: Literal["all", "pick"] = "all"
 
-    # 오퍼레이터용 0~100 추상 스케일 (스펙 §4.2). 있으면 대응하는 raw 필드보다 우선.
-    # None이면 기존 raw 필드(threshold_offset, min_area, max_area) 또는 config default를 사용.
+    # 오퍼레이터용 0~100 추상 스케일. 있으면 대응하는 raw 필드보다 우선.
+    #   sensitivity → min_t (감도)
+    #   edge_margin → 피킹 안전 여백(px)
     sensitivity: int | None = Field(None, ge=0, le=100)
-    min_size:    int | None = Field(None, ge=0, le=100)
-    max_size:    int | None = Field(None, ge=0, le=100)
     edge_margin: int | None = Field(None, ge=0, le=100)
-
-    @field_validator("tophat_kernel")
-    @classmethod
-    def _tophat_kernel_min(cls, v: int) -> int:
-        if v < 3:
-            raise ValueError("tophat_kernel must be >= 3")
-        return v
 
     @model_validator(mode="after")
     def _require_one_source(self) -> "DetectRequest":
@@ -149,11 +121,6 @@ class DetectRequest(BaseModel):
             )
         return self
 
-    @model_validator(mode="after")
-    def _area_range_ordered(self) -> "DetectRequest":
-        if self.min_area >= self.max_area:
-            raise ValueError("min_area must be < max_area")
-        return self
 
 
 class Colony(BaseModel):

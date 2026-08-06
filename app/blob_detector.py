@@ -18,7 +18,7 @@
    watershed가 이미지당 2,000~3,000개 파편을 만든다.
    → 스케일 정규화 LoG의 scale-space 국소최대로 크기를 스스로 추정한다.
 
-3. **ROI** — `_well_mask()`의 2×4 격자는 8웰 몰딩 plate 가정. 실제 샘플은 원형
+3. **ROI** — 8웰용 2×4 격자는 8웰 몰딩 plate 가정. 실제 샘플은 원형
    petri 접시 1개라 격자가 접시를 잘라냈다.
    → 접시 원을 HoughCircles로 직접 찾는다(밝기 극성 무관).
 
@@ -119,8 +119,8 @@ def plate_roi_with_scale(
     well8(사각 다웰)에는 접시 원이 없으므로 이미지 짧은 변을 기준으로 삼는다.
     """
     if plate_type == "well8":
-        from app.detector import _well_mask
-        return _well_mask(gray), float(min(gray.shape))
+        from app.well_plate import well_mask
+        return well_mask(gray), float(min(gray.shape))
     mask, circle = dish_roi(gray)
     ref = float(2 * circle[2]) if circle else float(min(gray.shape))
     return mask, ref
@@ -130,7 +130,7 @@ def plate_roi(gray: np.ndarray, plate_type: str) -> np.ndarray:
     """플레이트 내부 ROI 마스크.
 
     "petri" → 접시 원을 찾아 안쪽으로 수축.
-    "well8" → 기존 detector._well_mask 의 4×2 격자 (벽·프레임 제외).
+    "well8" → well_plate.well_mask 의 4×2 격자 (벽·프레임 제외).
 
     두 기하구조를 모두 지원해야 하는 이유: 이 프로젝트 하드웨어는 4×2 몰딩
     8웰 플레이트인데(tests/fixtures/agar_sample.jpg), sample/ 의 이미지는
@@ -144,8 +144,8 @@ def plate_roi(gray: np.ndarray, plate_type: str) -> np.ndarray:
         well8 ROI가 31개로 사각 플레이트인데 petri를 골랐다.
     """
     if plate_type == "well8":
-        from app.detector import _well_mask  # 순환 import 방지용 지역 import
-        return _well_mask(gray)
+        from app.well_plate import well_mask  # 순환 import 방지용 지역 import
+        return well_mask(gray)
     mask, _circle = dish_roi(gray)
     return mask
 
