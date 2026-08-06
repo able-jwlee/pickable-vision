@@ -3,6 +3,7 @@ from pathlib import Path
 
 import numpy as np
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import FileResponse
 
 from app import config
 from app.annotate import draw_for_response, draw_pick_targets, save_annotated
@@ -35,6 +36,37 @@ def _load_image(req: DetectRequest) -> np.ndarray:
         return decode_base64_image(req.image)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/image")
+def serve_image(path: str) -> FileResponse:
+    """원본 이미지를 그대로 돌려준다 (오퍼레이터 UI 표시용).
+
+    좌표만 받아 클라이언트가 오버레이를 그리려면 **클라이언트도 원본 이미지를
+    가져야 한다.** 지금까지는 UI 를 file:// 로 열어 상대경로로 읽었지만, 서버를
+    배포하면 그 방법이 깨진다. 이 엔드포인트가 그 간극을 메운다.
+
+    `/detect/preview` 와 다르다 — 그쪽은 검출 결과를 그려 넣은 이미지를 base64 로
+    주고, 이쪽은 표시 대상인 **원본**을 바이트 그대로 준다.
+
+    경로는 서버 실행 디렉터리 안으로 제한한다. `/detect` 의 `image_path` 는 로컬
+    튜닝 편의용이라 제약이 없지만, 그쪽은 파일을 **읽어서 검출에 쓸 뿐**이고
+    이쪽은 **내용을 그대로 반환**하므로 노출 성격이 다르다. 확장자도 이미지로
+    제한해 설정 파일 등이 새어 나가지 않게 한다.
+    """
+    root = Path.cwd().resolve()
+    try:
+        target = (root / path).resolve()
+    except (OSError, ValueError):
+        raise HTTPException(status_code=400, detail="invalid path")
+    if not target.is_relative_to(root):
+        raise HTTPException(status_code=403, detail="path outside server root")
+    if target.suffix.lower() not in {".jpg", ".jpeg", ".png", ".bmp", ".tif",
+                                     ".tiff", ".webp"}:
+        raise HTTPException(status_code=403, detail="not an image file")
+    if not target.is_file():
+        raise HTTPException(status_code=404, detail=f"not found: {path}")
+    return FileResponse(target)
 
 
 def _resolve_params(req: DetectRequest) -> dict:
@@ -77,6 +109,8 @@ def _resolve_params(req: DetectRequest) -> dict:
         "adaptive_scale": req.adaptive_scale,
         "min_solidity": req.min_solidity,
         "min_roundness": req.min_roundness,
+        "watershed_split": req.watershed_split,
+        "split_area_ratio": req.split_area_ratio,
         "threshold_offset": threshold_offset,
         "min_area": min_area,
         "max_area": max_area,
@@ -109,6 +143,8 @@ def _detect_and_score(
             adaptive_scale=resolved["adaptive_scale"],
             min_solidity=resolved["min_solidity"],
             min_roundness=resolved["min_roundness"],
+            watershed_split=resolved["watershed_split"],
+            split_area_ratio=resolved["split_area_ratio"],
         )
     else:
         circles = detect(

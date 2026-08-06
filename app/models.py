@@ -62,6 +62,14 @@ class DetectRequest(BaseModel):
     # 처리 해상도(최대변 px). 콜로니당 픽셀 수가 t-통계량을 좌우한다.
     # 실측: 1024가 전체 최적, 1536은 콜로니가 작은 이미지에만 유리, 2048은 전부 나쁨.
     work_size: int = Field(config.BLOB_WORK_SIZE, ge=384, le=2048)
+    # 분리 — 붙은 콜로니를 거리변환 watershed 로 나눈다.
+    #   watershed_split  끄면 뭉친 군집이 하나로 검출된다. **끄면 나빠지기만 한다**
+    #                    (실측: 한 접시에서 맞힘 7개 감소). 이상하게 잘릴 때만 끄는
+    #                    비상구이지 조정 knob 이 아니다.
+    #   split_area_ratio 자연 윤곽 면적이 기대 면적의 이 배를 넘으면 병합으로 본다.
+    #                    낮출수록 적극적으로 나눈다.
+    watershed_split: bool = config.BLOB_WATERSHED_SPLIT
+    split_area_ratio: float = Field(config.BLOB_SPLIT_AREA_RATIO, ge=0.5, le=5.0)
     # 모양 게이트. 재현율을 더 짜내야 할 때 접시별로 푸는 용도이고, 기본값이
     # 이미 실측 최적이라 보통은 건드릴 필요가 없다.
     #   min_solidity  면적 ÷ convex hull 면적. 오목한 얼룩·긁힘 배제.
