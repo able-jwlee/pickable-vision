@@ -40,6 +40,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 os.chdir(ROOT)
 
+from app import config  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 from main import app  # noqa: E402
 
@@ -247,10 +248,13 @@ def main() -> int:
                            max(int(r), th * 3), colour, th)
 
             # 검출 전용 뷰 — 정답 없이 UI 가 보여주는 그대로.
+            # app/annotate.py 의 draw_for_response 와 **같은 모양**으로 그린다.
+            # 여기만 원으로 두면 갤러리와 UI 가 달라 보여 비교가 어긋난다.
             plain = img.copy()
             for (x, y, r, _c) in dets:
-                cv2.circle(plain, (int(x), int(y)),
-                           max(int(r), th * 3), (0, 255, 0), th)
+                rad = max(int(r * config.DRAW_MARKER_PAD), th * 3)
+                cv2.rectangle(plain, (int(x) - rad, int(y) - rad),
+                              (int(x) + rad, int(y) + rad), (0, 255, 0), th)
 
             name = os.path.basename(p)
             cv2.imwrite(str(outdir / f"{gname}__{name}"), vis,
