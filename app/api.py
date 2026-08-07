@@ -90,6 +90,10 @@ def _resolve_params(req: DetectRequest) -> dict:
         "adaptive_scale": req.adaptive_scale,
         "min_solidity": req.min_solidity,
         "min_roundness": req.min_roundness,
+        "candidate_source": req.candidate_source,
+        "threshold_levels": req.threshold_levels,
+        "min_circularity": req.min_circularity,
+        "min_fill": req.min_fill,
         "watershed_split": req.watershed_split,
         "split_area_ratio": req.split_area_ratio,
         "pick_edge_margin": pick_edge_margin,
@@ -121,6 +125,10 @@ def _detect_and_score(
         min_roundness=resolved["min_roundness"],
         watershed_split=resolved["watershed_split"],
         split_area_ratio=resolved["split_area_ratio"],
+        candidate_source=resolved["candidate_source"],
+        threshold_levels=resolved["threshold_levels"],
+        min_circularity=resolved["min_circularity"],
+        min_fill=resolved["min_fill"],
     )
     geom = [
         {"x": x, "y": y, "radius": r, "circularity": c}

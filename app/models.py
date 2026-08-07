@@ -51,6 +51,24 @@ class DetectRequest(BaseModel):
     # 처리 해상도(최대변 px). 콜로니당 픽셀 수가 t-통계량을 좌우한다.
     # 실측: 1024가 전체 최적, 1536은 콜로니가 작은 이미지에만 유리, 2048은 전부 나쁨.
     work_size: int = Field(config.BLOB_WORK_SIZE, ge=384, le=2048)
+    # 후보 생성 방식.
+    #   "union"(기본) = LoG ∪ 이진화. 실측상 전 구간에서 LoG 단독보다
+    #                   +2.9~3.5%p 위다 — 두 방식이 서로 다른 것을 보기 때문.
+    #   "log"       = LoG 단독 (구동작).
+    #   "threshold" = 이진화 단독. 정밀도 93% 이상 구간에서는 이쪽이 합집합보다
+    #                 낫다(94%에서 67.3% 대 62.9%) — 계수(CFU) 용도에 적합.
+    candidate_source: Literal["union", "log", "threshold"] = (
+        config.BLOB_CANDIDATE_SOURCE)
+    # 이진화 후보의 임계값 레벨 수. 12/24/36 에서 재현율 67.9/70.8/71.3% 로
+    # 24 에서 포화한다. 늘려도 커버리지 천장(~90%)은 안 오른다.
+    threshold_levels: int = Field(config.BLOB_THRESHOLD_LEVELS, ge=2, le=64)
+    # 둘레 기반 원형도 4πA/P². **기본 0 = 끔.** 경계 거칠기에 극도로 민감해
+    # 합집합 후보(이진화 성분은 둘레가 거칠다)를 부당하게 버렸다. 모양 판정은
+    # min_roundness(면적 기반)가 담당한다.
+    min_circularity: float = Field(config.BLOB_MIN_CIRCULARITY, ge=0.0, le=1.0)
+    # 채움율 A/(bounding box 면적). 0.60 으로 올리면 정밀도 92~96% 구간에서
+    # +1.4~2.1%p — 계수 용도처럼 정밀도가 중요할 때 쓴다.
+    min_fill: float = Field(config.BLOB_MIN_FILL, ge=0.0, le=1.0)
     # 분리 — 붙은 콜로니를 거리변환 watershed 로 나눈다.
     #   watershed_split  끄면 뭉친 군집이 하나로 검출된다. **끄면 나빠지기만 한다**
     #                    (실측: 한 접시에서 맞힘 7개 감소). 이상하게 잘릴 때만 끄는
