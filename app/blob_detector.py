@@ -242,6 +242,89 @@ def log_candidates(
     ]
 
 
+def threshold_candidates(
+    gray: np.ndarray,
+    roi: np.ndarray,
+    bright: bool,
+    r_min: float,
+    r_max: float,
+    n_levels: int,
+    max_candidates: int,
+) -> list[tuple[float, float, float]]:
+    """여러 이진화 레벨의 연결성분 → (x, y, r) 후보. LoG 후보와 같은 형식.
+
+    LoG 와 **성격이 반대**다. LoG 는 봉우리면 무엇이든 올려 커버리지가 높지만
+    (93.4%) 후보가 지저분하다. 이쪽은 "연결된 덩어리"라는 조건을 이미 만족한
+    것만 올려 커버리지는 낮지만(89.7%) 순도가 훨씬 높다.
+
+    실측(39장) — 둘을 같은 게이트에 태웠을 때 정밀도 구간별 재현율:
+
+        정밀도 ~98%   LoG 23.0%   이진화 **58.5%**   ← 이진화 압승
+        정밀도 ~94%   LoG 59.0%   이진화 **67.3%**
+        정밀도 ~88%   LoG 68.5%   이진화 68.2%       ← 교차점
+        정밀도 ~81%   LoG **72.1%**  이진화 69.3%
+        정밀도 ~65%   LoG **74.8%**  이진화 71.3%
+
+    높은 정밀도를 원할수록 게이트를 조여야 하고, 그때는 후보가 깨끗한 쪽이
+    유리하다. 반대로 재현율을 짜낼 때는 커버리지가 높은 쪽이 이긴다.
+
+    **레벨을 늘려도 커버리지 천장은 안 오른다** — 12/24/36 레벨에서 재현율
+    67.9/70.8/71.3%. 흐린 콜로니는 어떤 절대 임계값에서도 배경과 갈라지지
+    않는다는 원리적 한계다(vague 그룹 커버리지 74%, LoG 는 97%).
+
+    백분위로 레벨을 잡는 이유: 전역 고정값을 쓰면 접시마다 밝기가 달라 대부분의
+    레벨이 무의미해진다.
+    """
+    g = gray if bright else (255 - gray)
+    inside = g[roi > 0]
+    if inside.size < 100:
+        return []
+    lo, hi = np.percentile(inside, [5, 95])
+    if not hi > lo:
+        return []
+    k3 = np.ones((3, 3), np.uint8)
+    out: list[tuple[float, float, float]] = []
+    seen: set[tuple[int, int, int]] = set()
+    for t in np.linspace(float(lo), float(hi), n_levels):
+        _, m = cv2.threshold(g, float(t), 255, cv2.THRESH_BINARY)
+        m = cv2.morphologyEx(cv2.bitwise_and(m, roi), cv2.MORPH_OPEN, k3)
+        n, _lab, stats, cents = cv2.connectedComponentsWithStats(m, 8)
+        for i in range(1, n):
+            a = stats[i, cv2.CC_STAT_AREA]
+            if a < 6:
+                continue
+            r = math.sqrt(a / math.pi)
+            if r < r_min or r > r_max:
+                continue
+            x, y = float(cents[i][0]), float(cents[i][1])
+            # 같은 성분이 여러 레벨에서 반복 나온다. 격자로 거칠게 중복 제거 —
+            # 촘촘하게 하면 중복이 남아 게이트 비용만 늘어난다.
+            key = (int(x / 3), int(y / 3), int(r / 3))
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append((x, y, r))
+            if len(out) >= max_candidates:
+                return out
+    return out
+
+
+def merge_candidates(
+    *groups: list[tuple[float, float, float]],
+) -> list[tuple[float, float, float]]:
+    """여러 후보 집합을 합치고 같은 자리를 하나로 줄인다."""
+    seen: set[tuple[int, int, int]] = set()
+    out: list[tuple[float, float, float]] = []
+    for g in groups:
+        for x, y, r in g:
+            key = (int(x / 3), int(y / 3), int(r / 3))
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append((x, y, r))
+    return out
+
+
 def estimate_bright(gray: np.ndarray, roi: np.ndarray) -> bool | None:
     """접시 하나의 콜로니 극성을 추정한다. True = 콜로니가 한천보다 밝다.
 
@@ -679,6 +762,8 @@ def detect_blobs(
     ink_sigma: float = config.BLOB_INK_SIGMA,
     contour_levels: int = config.BLOB_CONTOUR_LEVELS,
     contour_span: float = config.BLOB_CONTOUR_SPAN,
+    candidate_source: str = config.BLOB_CANDIDATE_SOURCE,
+    threshold_levels: int = config.BLOB_THRESHOLD_LEVELS,
     radius_mode: str = config.BLOB_RADIUS_MODE,
     radius_scale: float = config.BLOB_RADIUS_SCALE,
     radius_alpha: float = config.BLOB_RADIUS_ALPHA,
@@ -822,10 +907,31 @@ def detect_blobs(
         polarities = (True, False)
 
     for bright in polarities:
-        cands = log_candidates(
-            gray, roi, bright, r_min=r_min, r_max=r_max, n_scale=n_scale,
-            log_thresh=log_thresh, max_candidates=config.BLOB_MAX_CANDIDATES,
-        )
+        # 후보 생성 — 성격이 다른 두 방식을 합친다. 실측(39장)에서 합집합이
+        # LoG 단독보다 **모든 운영점에서 +2.9~3.5%p** 위다:
+        #   정밀도 ~95.5% → 55.1% → **58.0%**
+        #   정밀도 ~88.5% → 68.5% → **72.0%**   ← 기본 운영점
+        #   정밀도 ~65.3% → 74.8% → **77.8%**
+        # 교환이 아니라 곡선 전체가 평행 이동한다. LoG 는 커버리지(93.4%)를,
+        # 이진화는 후보 순도를 기여한다 — 서로 다른 것을 보므로 합쳐진다.
+        #
+        # 단 정밀도 93% 이상에서는 **이진화 단독**이 합집합보다 낫다(94%에서
+        # 67.3% 대 62.9%). LoG 후보가 그 구간에서는 잡음으로만 작용하기 때문이다.
+        # 계수(CFU)처럼 정밀도가 중요한 용도라면 candidate_source="threshold".
+        cands = []
+        if candidate_source in ("union", "log"):
+            cands.append(log_candidates(
+                gray, roi, bright, r_min=r_min, r_max=r_max, n_scale=n_scale,
+                log_thresh=log_thresh,
+                max_candidates=config.BLOB_MAX_CANDIDATES,
+            ))
+        if candidate_source in ("union", "threshold"):
+            cands.append(threshold_candidates(
+                gray, roi, bright, r_min=r_min, r_max=r_max,
+                n_levels=threshold_levels,
+                max_candidates=config.BLOB_MAX_CANDIDATES,
+            ))
+        cands = merge_candidates(*cands)
         kept += colony_gate(
             gray, sat, roi, cands, bright,
             min_t=min_t, min_rel_sat=min_rel_sat,
