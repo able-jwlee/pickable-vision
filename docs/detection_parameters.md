@@ -1,114 +1,212 @@
 # 검출 파라미터 레퍼런스 (내부용)
 
-> `POST /detect` 요청 파라미터를 **그룹·노출 수준·UI 컨트롤**로 정리한 문서.
-> 대상은 개발자(나중에 `ui/`에 컨트롤을 붙일 때 참고). 유저에게 그대로 공유하는 문서는 아님.
+> `POST /detect` 요청 파라미터를 **노출 수준·UI 컨트롤·실측 근거**로 정리한 문서.
+> 대상은 개발자. 프론트엔드 연동 방법은 [react-integration.md](react-integration.md).
 >
-> 출처(단일 진실): 기본값·범위는 [`vision/app/config.py`](../app/config.py),
-> 요청 스키마·검증은 [`vision/app/models.py`](../app/models.py),
-> 파이프라인 동작은 [`vision/app/detector.py`](../app/detector.py).
-> **이 문서와 코드가 어긋나면 코드가 맞다.** 값을 바꾸면 이 표도 같이 고칠 것.
+> **정본은 코드다.** 기본값·범위는 [`app/config.py`](../app/config.py),
+> 스키마·검증은 [`app/models.py`](../app/models.py), 동작은
+> [`app/blob_detector.py`](../app/blob_detector.py).
+> 기계가 읽을 정본은 **`/openapi.json`** — 프론트 폼은 이 문서가 아니라 거기서 생성할 것.
 
 ---
 
-## 0. 핵심 요약 (TL;DR)
+## 0. 핵심 요약
 
-- 실사용에서 유저가 만지는 건 사실상 **`threshold_offset` 하나**. 나머지는 대부분 셋업당 1회 고정.
-- 파라미터는 성격이 4종류로 갈린다 → UI도 이 그룹대로 나눠야 한다:
-  1. **검출 노브** — 자주 조절, 앞에 크게 노출
-  2. **셋업 파라미터** — 이미징 환경 의존, "고급" 접힘 영역
-  3. **출력·선별** — 검출 자체가 아니라 결과 가공
-  4. **코드 전용(숨김)** — 요청으로 노출 안 됨, `config.py`에서만
+- 오퍼레이터가 실제로 만지는 건 **`sensitivity` 하나**다. 나머지 기본값은 전부
+  sample/ 라벨 39장(정답 1,886개) 실측 최적이라 건드릴 이유가 거의 없다.
+- 기본 성적: **재현율 75.7% / 정밀도 82.2% / F1 78.8**
+- 파라미터 성격 4종 → UI도 이대로 나눈다:
+  1. **오퍼레이터 노브** — 항상 노출
+  2. **알고리즘 파라미터** — "고급" 접힘. 기본값이 실측 최적
+  3. **출력·선별** — 검출이 아니라 결과 가공
+  4. **코드 전용** — 요청으로 노출 안 됨
+
+> **한 축을 바꾸면 의존하는 축의 캘리브레이션이 무효가 된다.** 실제로 겪은 쌍:
+> `work_size` ↔ 크기 창, 반지름 ↔ NMS, 반지름 ↔ `split_area_ratio`,
+> `candidate_source` ↔ 모양 게이트. 하나만 바꿔 측정하면 잘못된 결론이 나온다.
 
 ---
 
-## 1. 검출 노브 — 자주 조절 (UI 전면 노출)
+## 1. 오퍼레이터 노브 — 항상 노출
 
-검출 "조건"을 실제로 바꾸는 값들. UI에서 제일 눈에 띄게.
-
-| 파라미터 | 기본값 | 범위(검증) | 방향 / 효과 | UI 컨트롤 제안 |
+| 파라미터 | 기본값 | 범위 | 효과 | UI |
 |---|---|---|---|---|
-| `threshold_offset` | `7` | `-50 ~ +50` (권장 sweet spot **-4 ~ +10**) | **민감도 메인 노브.** ↑(양수) = 임계값↓ = 흐린/작은 콜로니까지 더 잡음(노이즈↑). ↓(음수) = 엄격. 기본 +7은 "plate를 반듯하게 꽉 채워 촬영" 전제에서 흐린 콜로니 재현율을 최대화한 튜닝값. +8↑부터 노이즈, +10↑에서 임계값 바닥 | **Slider** (범위 -10~+10 노출, step 1). 실시간 preview와 묶으면 최고 |
-| `min_area` | `6.0` | `≥ 0`, `< max_area` | 이 넓이(px²) 미만 컷 → 작은 speck 제거 | Number input 또는 슬라이더 |
-| `max_area` | `5000.0` | `> 0`, `> min_area` | 이 넓이 초과 컷 → 병합된 큰 덩어리 제거 | Number input |
-| `min_circularity` | `0.42` | `0.0 ~ 1.0` | 원형도 하한. 낮추면 찌그러진 모양도 통과 | Slider (0~1, step 0.05) |
-| `split_touching` | `true` (**on**) | bool | 붙은 콜로니를 watershed로 분리. 밀집 구간 재현율↑, 과분할 위험 | **Switch** |
+| `sensitivity` | `50` | `0~100` | **유일한 상시 노브.** ↑ = 흐린 콜로니까지 잡음(재현율↑ 정밀도↓) | Slider |
+| `polarity` | `"auto"` | auto / both / bright / dark | 콜로니가 한천보다 밝은지 어두운지 | Select |
+| `plate_type` | `"petri"` | petri / well8 | 원형 접시 / 4×2 몰딩 8웰 | Select |
 
-> **부호 주의:** `threshold_offset`는 detector에서 `thresh = otsu - offset`로 쓰인다
-> ([detector.py](../app/detector.py) 참고). 즉 **올릴수록 더 민감**. UI 카피도 이 방향으로.
+### `sensitivity` 실측 곡선
+
+`min_t`(면적가중 t-통계량 하한)로 매핑된다. 낮을수록 민감.
+
+| sensitivity | min_t | 정밀도 | 재현율 | F1 |
+|---|---|---|---|---|
+| 43 | 30 | 89.0% | 70.9% | 78.9 |
+| 46 | 25 | 86.7% | 73.3% | **79.4** |
+| **50** | **20** | **82.2%** | **75.7%** | 78.8 |
+| 81 | 15 | 73.5% | 77.3% | 75.3 |
+
+기본을 F1 최고점(46)이 아니라 50으로 둔 것은 **재현율 우선** 요구 때문이다 —
+놓친 콜로니는 사람이 되살릴 수 없지만, 오검출은 승인 화면에서 뺄 수 있다.
+
+> 매핑은 선형이 아니다. 감도 50 아래는 한 칸이 min_t 1.4, 위는 0.16 씩 움직인다.
+> 그래서 50 미만에서는 슬라이더를 조금만 내려도 결과가 크게 바뀐다.
+
+### `polarity` — `auto` 를 유지할 것
+
+접시별 자동 판정이 39장에서 **판정 정확도 100%** 이고, 양극성 병합(`both`)보다
+모든 운영점에서 재현율이 3%p 이상 높다. 틀린 극성 분기는 기여 없이 오검출만 더했다.
+
+`both` 는 자동 판정이 틀리는 접시가 발견됐을 때의 되돌림 경로다.
 
 ---
 
-## 2. 셋업 파라미터 — 환경 의존, 평소 고정 (UI "고급" 접힘)
+## 2. 알고리즘 파라미터 — "고급" 접힘
 
-이미징 하드웨어/plate 종류가 정해지면 거의 안 바뀐다. 초보 유저에게 노출하면 오히려 망가뜨림 → 접힌 "고급 설정"에.
+**기본값이 이미 실측 최적이다.** 노출은 하되 접어둔다.
 
-| 파라미터 | 기본값 | 방향 / 효과 | UI 컨트롤 제안 |
+| 파라미터 | 기본값 | 효과 | 실측 |
 |---|---|---|---|
-| `invert` | `true` | 콜로니가 배경보다 어두우면 `true`(black top-hat). 조명/plate에 따라 1회 결정 | Switch (고급) |
-| `tophat_kernel` | `31` | top-hat 구조요소 크기(px). 콜로니보다 커야 함. `≥ 3` 검증 | Number input (고급) |
-| `mask_walls` | `true` | 8웰(2×4) 격자 안쪽으로만 검출 제한. plate 구조 바뀔 때만 | Switch (고급) |
+| `candidate_source` | `"union"` | LoG ∪ 이진화 | 전 구간에서 LoG 단독보다 **+2.9~3.5%p** |
+| `threshold_levels` | `24` | 이진화 레벨 수 | 12/24/36 → 67.9/70.8/71.3%. 24에서 포화 |
+| `work_size` | `1280` | 처리 해상도(최대변) | 콜로니당 픽셀 수가 t-통계량을 좌우 |
+| `min_solidity` | `0.75` | 면적 ÷ convex hull | 0.75 아래로는 결과 불변(포화) |
+| `min_roundness` | `0.55` | 면적 ÷ 최소외접원 | **완화 권장 안 함** ↓ |
+| `min_circularity` | `0.0` (끔) | 둘레 기반 4πA/P² | 경계 거칠기에 과민 → 껐다 |
+| `min_fill` | `0.45` | bounding box 채움율 | 0.60으로 올리면 고정밀 구간 +1.4~2.1%p |
+| `watershed_split` | `true` | 붙은 콜로니 분리 | **끄면 나빠지기만 한다** |
+| `split_area_ratio` | `1.5` | 병합 판정 배수 | 낮출수록 적극 분리 |
+| `colour_credit` | `1.0` (끔) | 색이 뚜렷하면 감도 완화 | 이미지 종류별로 최적이 갈림 ↓ |
+| `min_diam_frac` / `max_diam_frac` | `0.0` (끔) | 크기 창 ÷ 접시 지름 | 실측 분포 1.2~45%, 중앙값 7% |
+| `adaptive_scale` | `false` | 1차 검출로 해상도 재조정 | 비용 2배, F1은 오히려 하락 |
+
+### 주의가 필요한 세 개
+
+**`min_roundness` — 완화하지 말 것.** 직관과 반대로, 모양 게이트를 푸는 것보다
+**감도를 내리는 쪽이 같은 정밀도에서 더 많이 맞힌다.**
+
+정밀도 82.8% 로 맞춰 비교하면:
+
+| 방법 | 정밀도 | 재현율 |
+|---|---|---|
+| 둥글기 0.45 + t30 | 82.8% | 72.5% |
+| **둥글기 0.55 + t≈19 (기본값 유지)** | 82.8% | **74.7%** |
+
+**+2.2%p.** 둥글기를 푸는 건 곡선을 올리는 게 아니라 **곡선 위를 나쁜 방향으로
+미끄러지는 것**이다. 전 구간에서 그렇다 — 0.45 곡선은 0.55 곡선 아래에 있고,
+0.35·0.25 는 더 아래다.
+
+**`min_circularity` — 껐다 (2026-08-07).** 둘레 기반이라 경계 거칠기에 극도로
+민감하다. 합집합 후보의 이진화 성분은 둘레가 거칠어서 부당하게 버려졌다.
+끄자 같은 감도에서 재현율 74.4 → 75.7%. 모양 판정은 면적 기반 `min_roundness` 가 맡는다.
+
+**`colour_credit` — 용도에 따라 갈린다.** 2배로 주면 `vague` 그룹은 F1 26.1→40.9로
+살아나지만 `lower-res` 는 77.6→61.6으로 무너진다. 전역 기본값으로 삼을 수 없다.
+
+### `candidate_source` — 용도별 선택
+
+| 값 | 언제 |
+|---|---|
+| `"union"` (기본) | 재현율 우선 — 피킹 |
+| `"threshold"` | 정밀도 93% 이상 구간에서 합집합보다 낫다 (94%에서 67.3% 대 62.9%) — **계수(CFU) 용도** |
+| `"log"` | 구동작 |
+
+두 방식이 **서로 다른 것을 본다.** LoG는 흐리고 경계가 불분명한 것을, 이진화는
+경계가 뚜렷하고 크기가 제각각인 것을 잡는다. 그래서 합집합이 이긴다.
 
 ---
 
 ## 3. 출력·선별 — 검출이 아니라 결과 가공
 
-| 파라미터 | 기본값 | 효과 | UI 컨트롤 제안 |
+| 파라미터 | 기본값 | 효과 | UI |
 |---|---|---|---|
-| `pick_top_n` | `null` | 피킹 후보 중 점수 상위 N개만 남김 (예: 96핀 → 96) | Number input (선택). 핀 수와 연동하면 자동 채움 |
-| `annotate` | `"all"` | 표시 모드. `"all"`=검출 전체 빨강(카운트/분석), `"pick"`=피킹 대상(pickable)만 초록(로봇이 실제 집을 안전 후보만). JSON 값은 두 모드 동일 | **Toggle** "검출 전체 / 피킹 대상만". 운영 화면은 `"pick"` 기본 권장 |
-| `save_annotated` | `false` | 검출 표시 이미지를 `vision/output/`에 저장 (로컬 디버그용) | 개발/디버그 토글. 프로덕션 UI에선 숨김 후보 |
-| `image` / `image_path` | — | 입력 소스(base64 / 로컬 경로). 둘 중 하나 필수 | UI에선 카메라 캡처가 자동 채움 → 노출 안 함 |
+| `pick_top_n` | `null` | 피킹 후보 중 상위 N개만 (96핀 → 96) | Number (선택) |
+| `mask_walls` | `true` | 경계 안쪽만 피킹 인정 | Switch (고급) |
+| `edge_margin` | `null` | 0~100 → 안전 여백(px) | Slider (고급) |
+| `pick_radius_min/max` | `null` | 피킹 반지름 대역(**원본 px**) | 카메라 바꾸면 재조정 |
+| `annotate` | `"all"` | 표시 모드. all=전체 빨강 / pick=대상만 초록 | Toggle |
+
+`score`·`pickable` 은 **랭킹과 안전 판정**이지 검출 품질이 아니다. JSON은 어느
+모드에서든 전부 반환된다.
 
 ---
 
-## 4. 코드 전용 (숨김) — 요청으로 노출 안 됨
+## 4. 노출하지 말 것
 
-`config.py`에만 있고 `DetectRequest`에 없다. 하드웨어·알고리즘 튜닝용이라 **UI에 넣지 말 것**. 바꿀 일이 생기면 코드 리뷰를 거쳐 config에서.
+개발·디버깅용. 프로덕션 UI에 넣지 않는다.
 
-- ROI 마스크: `ROI_CLOSE_KERNEL`(35), `ROI_ERODE_KERNEL`(45 — 벽 오검출 방지용으로 상향). `_well_mask`가 격자 마스크 ∩ 침식 ROI를 반환해 바깥벽 제외
-- 메니스커스 제거: `MENISCUS_MIN_LEN`(80), `MENISCUS_MIN_ASPECT`(4.0) — 벽면 agar 주름(길고 얇은 선형 성분)을 watershed 전에 제거. 콜로니/클러스터(compact)는 보존. `_remove_wall_streaks`
-- 웰 격자: `WELL_ROWS`(2), `WELL_COLS`(4), `WELL_MARGIN`(40)
-- watershed: `WATERSHED_MIN_DISTANCE`(5), `WATERSHED_SEED_MIN`(2.0)
-- 피킹 점수/안전: `PICK_MIN_SEPARATION`, `PICK_ISOLATION_REF`, `PICK_RADIUS_MIN/MAX`, `PICK_W_ISOLATION`, `PICK_W_SIZE`
-  - `PICK_MIN_CIRCULARITY`(0.55) — 피킹 대상 둥글기 하한(병합/균열/데브리 배제). 검출용(0.42)보다 엄격
-  - `PICK_EDGE_MARGIN`(60) — 웰/plate 경계에서 이만큼 안쪽만 피킹 인정(벽 반점에 핀 찍기 방지)
-  - 피킹 안전 3중 게이트 = 고립(분리거리) + 크기대역 + 둥글기 + 경계여백. 검출(빨강)은 그대로 두고 피킹 대상(pickable)만 좁힘
-- 그리기: `OUTPUT_DIR`, `DRAW_*`, `MIN_DRAW_RADIUS`
+| 파라미터 | 이유 |
+|---|---|
+| `image_path` | 서버와 파일시스템을 공유할 때만 동작. 운용에선 차단 |
+| `save_annotated` | 서버 디스크에 파일을 쓴다 |
+| `return_image` | 260KB base64. 좌표(3.9KB)를 쓸 것 |
+| `image_format` / `image_quality` / `image_max_width` / `marker` | `return_image` 부속 |
 
 ---
 
-## 5. 향후 UI 구현 메모
+## 5. 코드 전용 — 요청으로 노출 안 됨
 
-- **레이아웃:** ① 상단에 `threshold_offset` 슬라이더(+ live preview) → ② "필터"(area/circularity/split) → ③ Accordion "고급 설정"에 셋업 파라미터. shadcn `Slider`/`Switch`/`Accordion` 이미 설치돼 있음.
-- **폼 검증:** 프론트 zod 스키마를 백엔드 검증과 **동일하게** 맞출 것 (아래 §6). 어긋나면 422가 뒤늦게 뜬다.
-- **프리셋:** 자주 쓰는 조합(예: "민감/표준/엄격")을 버튼 프리셋으로 두면 유저가 개별 노브를 안 만져도 됨 — 사용성 최상.
-- **live preview:** `POST /detect/preview`가 이미 있고([api.py:88](../app/api.py#L88)) 같은 `DetectRequest`를 받아 표시 이미지(`PreviewResponse.image`)를 돌려준다. 슬라이더 드래그 → 이 엔드포인트 호출 → 즉시 반영이 가장 직관적.
-- **미노출 권장:** `save_annotated`(디버그), `image_path`(서버 파일시스템 공유 시에만 동작). 카메라 플로우에선 `image`(base64)만.
+`config.py` 에만 있다. 알고리즘 내부라 UI에 넣지 말 것.
+
+- **t-통계량 표본 영역**: `BLOB_INNER_FRAC`(0.80), `BLOB_OUTER_LO`(1.4), `BLOB_OUTER_HI`(2.8)
+- **반지름 보정**: `BLOB_RADIUS_MODE`("max"), `BLOB_RADIUS_SCALE`(1.30)
+- **극성 자동판정**: `BLOB_AUTO_POLARITY`(True), `BLOB_POLARITY_MIN_MARGIN`(0.05)
+- **모양**: `BLOB_MAX_ASPECT`(2.0)
+- **잡음·채도**: `BLOB_NOISE_FLOOR`(0.5), `BLOB_MONO_SAT_STD`(2.0), `BLOB_MIN_REL_SAT`(1.5)
+- **웰 격자**: `WELL_ROWS`(2), `WELL_COLS`(4), `WELL_MARGIN`(40)
+- **피킹 점수**: `PICK_W_ISOLATION`(0.7), `PICK_W_SIZE`(0.3), `PICK_ISOLATION_REF`(50.0)
+- **그리기**: `OUTPUT_DIR`, `DRAW_*`, `DRAW_MARKER_PAD`(1.05)
+
+> `DRAW_MARKER_PAD` 는 `BLOB_RADIUS_SCALE` 과 **함께 움직인다.** 한때 1.35(옛 0.71배
+> 반지름 보정용)와 새 1.30배가 곱해져 마커가 35% 크게 그려졌다.
+
+### 죽은 상수 (정리 대상)
+
+top-hat 경로 제거 후 남은 미참조 상수. 어디서도 쓰이지 않는다:
+
+```
+DEFAULT_MIN_AREA  DEFAULT_MAX_AREA  DEFAULT_MIN_CIRCULARITY  DEFAULT_INVERT
+DEFAULT_TOPHAT_KERNEL  DEFAULT_THRESHOLD_OFFSET  DEFAULT_SPLIT_TOUCHING
+MENISCUS_MIN_LEN  MENISCUS_MIN_ASPECT  WATERSHED_MIN_DISTANCE  WATERSHED_SEED_MIN
+```
 
 ---
 
-## 6. 검증 규칙 (프론트 zod와 일치시킬 것)
+## 6. 프리셋
 
-`models.py` 기준 현재 강제되는 제약:
+목업([operator-ui.html](mockup/operator-ui.html))에 구현된 것. 감도 값은 실측점에서 역산했다.
+
+| 프리셋 | `sensitivity` | min_t | 정밀도 | 재현율 |
+|---|---|---|---|---|
+| 기본 | 50 | 20 | 82.2% | 75.7% |
+| 덜 찾더라도 정확하게 | 43 | 30 | 89.0% | 70.9% |
+| 놓치지 않게 많이 찾기 | 81 | 15 | 73.5% | 77.3% |
+
+---
+
+## 7. 검증 규칙 — 폼에서 미리 막을 것
+
+`models.py` 기준. 어긋나면 422가 뒤늦게 뜬다.
 
 | 파라미터 | 제약 |
 |---|---|
-| `min_circularity` | `0.0 ≤ v ≤ 1.0` |
-| `tophat_kernel` | `v ≥ 3` |
-| `threshold_offset` | `-50 ≤ v ≤ 50` |
-| `min_area` | `v ≥ 0` |
-| `max_area` | `v > 0` |
-| (교차) | `min_area < max_area` |
+| `min_t` | `1.0 ≤ v ≤ 200.0` |
+| `sensitivity` / `edge_margin` | `0 ≤ v ≤ 100` (int) |
+| `work_size` | `384 ≤ v ≤ 2048` |
+| `threshold_levels` | `2 ≤ v ≤ 64` |
+| `min_solidity` / `min_roundness` / `min_circularity` / `min_fill` | `0.0 ≤ v ≤ 1.0` |
+| `min_diam_frac` / `max_diam_frac` | `0.0 ≤ v ≤ 1.0` |
+| `colour_credit` | `1.0 ≤ v ≤ 8.0` |
+| `split_area_ratio` | `0.5 ≤ v ≤ 5.0` |
 | (소스) | `image` 또는 `image_path` 중 하나 필수 |
+
+**이 표를 손으로 옮기지 말 것.** `/openapi.json` 에 전부 들어 있고,
+`openapi-typescript` 로 뽑으면 서버가 바뀔 때 빌드가 깨져서 알려준다.
 
 ---
 
-## 오퍼레이터용 파라미터 (0~100 스케일)
+## 8. 관련 문서
 
-로봇 오퍼레이터를 위해 CV 원본 파라미터의 사용성을 다듬은 4개 슬라이더 값. `POST /detect`/`POST /detect/preview`에 `sensitivity`, `min_size`, `max_size`, `edge_margin` (모두 `int`, 0~100, 선택) 필드로 전달한다.
-
-지정된 필드는 대응 raw 필드를 덮어쓴다. 미지정이면 기존 raw 필드 또는 config 상수를 그대로 사용해 backwards compat이 유지된다. 매핑은 `app/param_mapping.py`에서 pure function으로 구현되어 있으며, 프론트엔드가 참조 구현이 필요하면 그대로 포팅할 수 있다.
-
-응답의 `applied_params` dict에 실제 사용된 raw 값이 담긴다 — 튜닝 로그·재현·이슈 리포트 용도.
-
-설계 근거·매핑 상세: `docs/superpowers/specs/2026-07-28-operator-parameters-design.md`.
+- [react-integration.md](react-integration.md) — 프론트엔드 연동
+- [detection-improvement-2026-07-28.md](detection-improvement-2026-07-28.md) — 실측 이력과 기각한 시도들
+- [app/config.py](../app/config.py) — 상수별 곡선과 기각 사유 (가장 상세)
