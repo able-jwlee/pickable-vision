@@ -1,0 +1,4 @@
+# exe 빌드 전용. 런타임에는 필요 없다.
+#   .venv/Scripts/python -m pip install -r requirements-build.txt
+#   .venv/Scripts/python -m PyInstaller vision.spec --noconfirm
+pyinstaller==6.22.0

@@ -172,6 +172,42 @@ curl -X POST http://localhost:7780/detect \
 .venv/Scripts/python -m pytest -v
 ```
 
+## exe 빌드 (Python 없는 PC 배포)
+
+```bash
+.venv/Scripts/python -m pip install -r requirements-build.txt
+.venv/Scripts/python -m PyInstaller vision.spec --noconfirm
+# → dist/pickable-vision/  (140MB, 폴더 통째로 복사해 쓴다)
+```
+
+```bash
+dist/pickable-vision/pickable-vision.exe                  # 127.0.0.1:7780
+dist/pickable-vision/pickable-vision.exe --port 8080
+dist/pickable-vision/pickable-vision.exe --host 0.0.0.0   # 다른 PC 에서 접속
+```
+
+**작업 디렉터리가 곧 서빙 범위다.** `GET /image` 는 exe 를 실행한 디렉터리 아래
+이미지만 내주고, `save_annotated` 결과도 그 아래 `output/` 에 쌓인다. 더블클릭하면
+exe 가 있는 폴더가 기준이 된다. 서버가 시작할 때 그 경로를 찍어준다.
+
+| | |
+|---|---|
+| 크기 | 140MB (폴더) · 기동 약 2초 |
+| 검출 | **개발 서버와 좌표까지 동일** (샘플 3장 대조 확인) |
+| 기본 바인드 | `127.0.0.1` — 외부 노출은 `--host 0.0.0.0` 을 **명시**해야 한다 |
+| `/docs` | Swagger UI 는 CDN 에서 JS 를 받으므로 **인터넷이 없으면 안 뜬다.** 스펙 자체(`/openapi.json`)는 오프라인에서도 나온다 |
+
+폴더 배포(onedir)가 기본이다. 단일 파일이 필요하면:
+
+```bash
+PICKABLE_ONEFILE=1 .venv/Scripts/python -m PyInstaller vision.spec --noconfirm
+```
+
+단일 파일은 실행할 때마다 140MB 를 임시 폴더에 풀어 기동이 느리고 백신 오탐도
+잦다. 서버는 한 번 띄워 계속 쓰는 물건이라 폴더 배포를 권한다.
+
+빌드 설정과 제외 목록의 근거는 [vision.spec](vision.spec) 주석에 있다.
+
 ## 재현
 
 성적 수치는 `sample/` 이미지와 그 정답 라벨(JSON) 39쌍으로 측정한다. 이미지는 용량 때문에
@@ -192,5 +228,5 @@ git에서 제외돼 있다(`.gitignore`).
 
 ## 범위 밖 (향후 단계)
 
-픽셀→mm 좌표 변환(캘리브레이션), 오퍼레이터 승인 UI, PocketBase 레시피/이력 연동,
-PyInstaller 패키징.
+픽셀→mm 좌표 변환(캘리브레이션), 오퍼레이터 승인 UI, PocketBase 레시피/이력 연동.
+(PyInstaller 패키징은 위 [exe 빌드](#exe-빌드-python-없는-pc-배포) 에서 구현됨)

@@ -24,6 +24,11 @@ __pycache__/
 # `sample/` 로 쓰면 git이 디렉터리 안으로 내려가지 않아 아래 예외가 무시된다.
 sample/**
 
+# PyInstaller 산출물 (dist 140MB) 과 중간 파일. vision.spec 만 커밋한다 —
+# 빌드는 재현 가능해야 하고, 바이너리를 리포에 넣으면 클론이 감당 못 한다.
+build/
+dist/
+
 # 에이전트 세션 로컬 상태
 .omc/
 

@@ -66,7 +66,78 @@ app.add_middleware(
 app.include_router(router)
 
 
-if __name__ == "__main__":
+def _init_console() -> None:
+    """Windows 콘솔 출력이 인코딩 때문에 죽지 않게 한다.
+
+    한국어 Windows 의 기본 콘솔 코드페이지는 cp949 이고 거기에는 em dash(—)
+    같은 문자가 없다. 그대로 두면 **`--help` 조차** argparse 가 도움말을 찍다가
+    UnicodeEncodeError 로 죽는다(실측: exit 1, 스택트레이스 노출).
+
+    콘솔을 UTF-8 로 바꾸고 스트림도 맞춘다. 코드페이지 변경이 실패해도
+    errors="replace" 덕분에 글자가 깨질지언정 죽지는 않는다.
+    """
+    import sys
+
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+
+        ctypes.windll.kernel32.SetConsoleOutputCP(65001)
+    except Exception:  # 콘솔이 없는 환경(서비스로 실행 등)에서는 그냥 넘어간다
+        pass
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, OSError, ValueError):
+            pass
+
+
+def _run() -> None:
+    """개발 실행과 PyInstaller exe 의 공통 진입점.
+
+    exe 로 배포하면 포트가 이미 쓰이는 PC 가 있으므로 --port 를 받는다.
+    `/image` 가 서빙하는 범위와 `output/` 저장 위치가 **실행 디렉터리 기준**이라
+    시작할 때 그 경로를 찍어준다 — exe 를 더블클릭하면 exe 가 있는 폴더가 된다.
+    """
+    import argparse
+    import sys
+    from pathlib import Path
+
     import uvicorn
 
-    uvicorn.run(app, host="0.0.0.0", port=7780)
+    _init_console()
+
+    ap = argparse.ArgumentParser(
+        prog="pickable-vision",
+        description="PICKABLE Vision Server — 콜로니 검출 API",
+    )
+    ap.add_argument("--host", default="127.0.0.1",
+                    help="바인드 주소 (기본 127.0.0.1). 다른 PC 에서 접속하려면 0.0.0.0")
+    ap.add_argument("--port", type=int, default=7780, help="포트 (기본 7780)")
+    ap.add_argument("--log-level", default="info",
+                    choices=["critical", "error", "warning", "info", "debug"])
+    ap.add_argument("--version", action="version", version=f"%(prog)s {API_VERSION}")
+    args = ap.parse_args()
+
+    frozen = getattr(sys, "frozen", False)
+    print(f"PICKABLE Vision Server {API_VERSION}{' (exe)' if frozen else ''}")
+    print(f"  http://{args.host}:{args.port}      Swagger: /docs")
+    print(f"  작업 디렉터리: {Path.cwd()}")
+    print(f"    → GET /image 는 이 아래 이미지만 서빙하고,")
+    print(f"      save_annotated 결과도 이 아래 output/ 에 쌓인다.")
+    if args.host == "0.0.0.0":  # noqa: S104 — 의도적, 사용자가 명시했을 때만
+        print("  경고: 0.0.0.0 은 네트워크에 노출된다. CORS 가 아직 전체 허용이므로")
+        print("        신뢰된 망에서만 쓸 것.")
+
+    uvicorn.run(app, host=args.host, port=args.port, log_level=args.log_level)
+
+
+if __name__ == "__main__":
+    # PyInstaller 로 얼린 Windows 실행 파일에서 자식 프로세스가 스크립트를
+    # 재실행하며 무한 증식하는 것을 막는다. uvicorn 을 단일 프로세스로 쓰므로
+    # 지금은 발동하지 않지만, 워커를 쓰게 되면 없을 때 즉시 문제가 된다.
+    import multiprocessing
+
+    multiprocessing.freeze_support()
+    _run()
