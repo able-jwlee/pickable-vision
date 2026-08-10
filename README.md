@@ -66,8 +66,21 @@ python -m venv .venv
 }
 ```
 
-전체 파라미터는 `/docs` (Swagger) 또는 `/openapi.json` 이 정본이고,
-필드별 실측 근거는 [docs/detection_parameters.md](docs/detection_parameters.md)에 있다.
+전체 파라미터(31개)는 **[docs/openapi.json](docs/openapi.json)** 이 정본이다 —
+범위·기본값·enum·설명이 전부 들어 있고, 서버의 `/openapi.json`·`/docs`(Swagger)와
+같은 내용이다. 필드별 실측 근거는
+[docs/detection_parameters.md](docs/detection_parameters.md)에 있다.
+
+```bash
+# 스펙 갱신 (코드를 바꾼 뒤)
+.venv/Scripts/python scripts/export_openapi.py
+
+# 프론트엔드 타입 생성
+npx openapi-typescript vision/docs/openapi.json -o src/api/schema.d.ts
+```
+
+`docs/openapi.json` 은 **손으로 고치지 말 것** — 코드에서 생성하며, 어긋나면
+`pytest` 가 실패한다.
 
 ### 오퍼레이터용 0~100 스케일 필드
 

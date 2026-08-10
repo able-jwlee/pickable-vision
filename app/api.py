@@ -32,22 +32,35 @@ def _load_image(req: DetectRequest) -> np.ndarray:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-@router.get("/image")
+@router.get(
+    "/image",
+    tags=["image"],
+    summary="원본 이미지 바이트",
+    response_class=FileResponse,
+    responses={
+        200: {"content": {"image/*": {}}, "description": "이미지 바이트"},
+        400: {"description": "경로 형식 오류"},
+        403: {"description": "서버 루트 밖이거나 이미지 확장자가 아님"},
+        404: {"description": "파일 없음"},
+    },
+)
 def serve_image(path: str) -> FileResponse:
-    """원본 이미지를 그대로 돌려준다 (오퍼레이터 UI 표시용).
+    """UI 배경으로 깔 **원본 이미지**를 바이트 그대로 돌려준다.
 
-    좌표만 받아 클라이언트가 오버레이를 그리려면 **클라이언트도 원본 이미지를
-    가져야 한다.** 지금까지는 UI 를 file:// 로 열어 상대경로로 읽었지만, 서버를
-    배포하면 그 방법이 깨진다. 이 엔드포인트가 그 간극을 메운다.
+    `POST /detect` 가 좌표만 반환하므로 클라이언트도 원본 이미지를 가져야
+    오버레이를 그릴 수 있다. `<img src="/image?path=...">` 로 쓰면 브라우저가
+    캐시하므로 감도를 바꿔 재검출해도 이미지는 다시 받지 않는다.
 
-    `/detect/preview` 와 다르다 — 그쪽은 검출 결과를 그려 넣은 이미지를 base64 로
-    주고, 이쪽은 표시 대상인 **원본**을 바이트 그대로 준다.
+    `path` 는 서버 실행 디렉터리 기준 상대 경로이고, 디렉터리 밖으로 나가거나
+    이미지가 아닌 확장자면 403 이다.
 
-    경로는 서버 실행 디렉터리 안으로 제한한다. `/detect` 의 `image_path` 는 로컬
-    튜닝 편의용이라 제약이 없지만, 그쪽은 파일을 **읽어서 검출에 쓸 뿐**이고
-    이쪽은 **내용을 그대로 반환**하므로 노출 성격이 다르다. 확장자도 이미지로
-    제한해 설정 파일 등이 새어 나가지 않게 한다.
+    `/detect/preview` 와 다르다 — 그쪽은 검출 결과를 **그려 넣은** 이미지를
+    base64 로 주고, 이쪽은 표시 대상인 **원본**을 바이트로 준다.
     """
+    # 경로를 서버 실행 디렉터리 안으로 제한한다. `/detect` 의 `image_path` 는
+    # 로컬 튜닝 편의용이라 제약이 없지만, 그쪽은 파일을 **읽어서 검출에 쓸 뿐**
+    # 이고 이쪽은 **내용을 그대로 반환**하므로 노출 성격이 다르다. 확장자도
+    # 이미지로 제한해 설정 파일 등이 새어 나가지 않게 한다.
     root = Path.cwd().resolve()
     try:
         target = (root / path).resolve()
@@ -173,13 +186,37 @@ def _output_name(req: DetectRequest) -> str:
     return f"{stem}_{ts}.jpg"
 
 
-@router.get("/health")
+@router.get("/health", tags=["ops"], summary="헬스체크")
 def health() -> dict:
+    """서버가 살아 있는지만 확인한다. `{"status": "ok"}`."""
     return {"status": "ok"}
 
 
-@router.post("/detect", response_model=DetectResponse)
+@router.post(
+    "/detect",
+    response_model=DetectResponse,
+    tags=["detect"],
+    summary="콜로니 검출 → 좌표",
+    responses={
+        400: {"description": "이미지 디코딩 실패 또는 입력 누락"},
+        422: {"description": "파라미터 범위 위반"},
+    },
+)
 def detect_colonies(req: DetectRequest) -> DetectResponse:
+    """이미지에서 콜로니를 검출해 **원본 픽셀 좌표**를 반환한다.
+
+    프론트엔드가 쓰는 주 엔드포인트다. 응답은 좌표만 담아 4000px 이미지에서도
+    약 3.9KB 이고, 배경 이미지는 `GET /image` 로 따로 받아 브라우저가 캐시한다.
+
+    좌표는 `work_size` 로 축소해 처리하더라도 **원본 픽셀로 되돌려 준다.**
+
+    보낼 값은 보통 `sensitivity`(0~100) 하나다. 서버가 적용한 raw 값은
+    `applied_params` 로 되돌아오므로 UI 는 그것을 표시하면 된다 —
+    **매핑식을 클라이언트에서 재계산하지 말 것.**
+
+    `pickable` 은 로봇이 안전하게 집을 수 있는 후보인지이고, `score` 는 그
+    랭킹이다. 둘 다 **검출 신뢰도가 아니다.**
+    """
     img = _load_image(req)
     height, width = img.shape[:2]
     resolved = _resolve_params(req)
@@ -216,8 +253,26 @@ def detect_colonies(req: DetectRequest) -> DetectResponse:
     )
 
 
-@router.post("/detect/preview", response_model=PreviewResponse)
+@router.post(
+    "/detect/preview",
+    response_model=PreviewResponse,
+    tags=["detect"],
+    summary="콜로니 검출 → 표시 이미지 (좌표 없음)",
+    responses={
+        400: {"description": "이미지 디코딩 실패 또는 입력 누락"},
+        422: {"description": "파라미터 범위 위반"},
+    },
+)
 def detect_preview(req: DetectRequest) -> PreviewResponse:
+    """검출 결과를 **그려 넣은 이미지**만 반환한다. 좌표는 담기지 않는다.
+
+    파라미터를 눈으로 튜닝할 때 쓰는 개발용 엔드포인트다.
+    **웹 UI 는 `POST /detect` + `GET /image` 를 쓸 것** — 그쪽이 67배 작고
+    확대해도 마커가 뭉개지지 않는다.
+
+    좌표와 이미지를 한 번에 받아야 하면 `POST /detect` 에
+    `return_image: true` 를 주면 된다.
+    """
     img = _load_image(req)
     resolved = _resolve_params(req)
     colonies = _detect_and_score(img, req, resolved)

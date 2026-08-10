@@ -9,7 +9,7 @@
 ## 0. 30초 요약
 
 ```
-GET  /openapi.json        → 파라미터 스키마 (폼을 여기서 생성할 것)
+docs/openapi.json         → 파라미터 스키마 (폼·타입을 여기서 생성할 것)
 GET  /image?path=...      → 원본 이미지 (배경, 브라우저 캐시됨)
 POST /detect              → 좌표 JSON (3.9KB)
 ```
@@ -129,21 +129,44 @@ function sensitivityToMinT(v) {
 <span>감도 {sensitivity} → t={applied_params.min_t}</span>
 ```
 
-**폼 자체는 `/openapi.json` 에서 생성:**
+**폼 자체는 OpenAPI 스펙에서 생성:**
+
+스펙은 [docs/openapi.json](openapi.json) 에 체크인돼 있다 (서버의
+`/openapi.json` 과 같은 내용이고, 서버를 띄우지 않아도 쓸 수 있다).
 
 ```
 components.schemas.DetectRequest.properties.min_solidity
-  → { type: 'number', minimum: 0, maximum: 1, default: 0.75 }
+  → { type: 'number', minimum: 0, maximum: 1, default: 0.75,
+      description: '면적 ÷ convex hull 면적 하한. 오목한 얼룩·긁힘을 배제한다...' }
 components.schemas.DetectRequest.properties.candidate_source
-  → { enum: ['union','log','threshold'], default: 'union' }
+  → { enum: ['union','log','threshold'], default: 'union',
+      description: 'union = LoG ∪ 다중레벨 이진화(기본, 재현율 우선)...' }
 ```
 
-범위·기본값·enum이 전부 들어 있다. `openapi-typescript` 로 타입까지 뽑으면
-서버가 필드를 바꿨을 때 **빌드가 깨져서** 알려준다.
+범위·기본값·enum·설명이 전부 들어 있다. 31개 필드 모두 설명이 붙어 있으므로
+**폼 라벨과 툴팁을 여기서 그대로 뽑아 쓰면 된다.**
 
 ```bash
-npx openapi-typescript http://localhost:7780/openapi.json -o src/api/schema.d.ts
+npx openapi-typescript vision/docs/openapi.json -o src/api/schema.d.ts
 ```
+
+설명이 JSDoc 으로 들어가 에디터 툴팁에 그대로 뜬다:
+
+```ts
+/** @description 감도 (오퍼레이터용 0~100). 높을수록 흐린 콜로니까지 잡는다.
+ *  실측: 43 → 89.0%/70.9%, 46 → 86.7%/73.3%, 50 → 82.2%/75.7%(기본) ... */
+sensitivity?: number | null;
+```
+
+서버가 필드를 바꾸면 **빌드가 깨져서** 알려준다.
+
+> **스펙 파일은 손으로 고치지 말 것.** 코드에서 생성한다:
+> ```bash
+> .venv/Scripts/python scripts/export_openapi.py
+> ```
+> 파일이 코드와 어긋나면 `pytest` 가 실패한다
+> ([tests/test_openapi_spec.py](../tests/test_openapi_spec.py)) — 이 프로젝트가
+> 같은 종류의 드리프트를 네 번 겪어서 넣은 장치다.
 
 ---
 
