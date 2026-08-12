@@ -54,3 +54,15 @@ def test_min_rel_sat_out_of_range_rejected():
     for bad in ({"min_rel_sat": -1.0}, {"min_rel_sat": 100.0}):
         resp = client.post("/detect", json={"image_path": SAMPLES[0], **bad})
         assert resp.status_code == 422, f"{bad} 는 422여야 함"
+
+
+def test_applied_params_reports_has_chroma():
+    """UI 가 색 그룹을 잠글지 판단하는 값이다."""
+    ap = _detect()["applied_params"]
+    assert "has_chroma" in ap
+    assert isinstance(ap["has_chroma"], bool)
+
+
+def test_colour_sample_reports_chroma_true():
+    """sample/ 의 컬러 접시는 색 축이 적용돼야 한다."""
+    assert _detect()["applied_params"]["has_chroma"] is True

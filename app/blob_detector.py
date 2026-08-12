@@ -779,6 +779,9 @@ def detect_blobs(
     n_scale: int = config.BLOB_N_SCALE,
     log_thresh: float = config.BLOB_LOG_THRESH,
     plate_type: str = "petri",
+    # 호출자가 dict 를 주면 검출 중 알아낸 사실을 채워 준다. 반환값에 끼워 넣지
+    # 않는 이유는 detector.detect 와 형식이 같아야 하기 때문이다(모듈 docstring).
+    stats: dict | None = None,
 ) -> list[tuple[float, float, float, float]]:
     """콜로니를 검출해 원본 좌표계의 (x, y, radius, circularity) 리스트를 반환.
 
@@ -824,7 +827,7 @@ def detect_blobs(
             force_bright=force_bright,
             work_size=work_size, r_min=r_min,
             r_max=r_max, n_scale=n_scale, log_thresh=log_thresh,
-            plate_type=plate_type,
+            plate_type=plate_type, stats=stats,
         )
         if len(probe) >= config.BLOB_SCALE_PROBE_MIN:
             s0 = min(1.0, work_size / max(h, w))
@@ -850,7 +853,7 @@ def detect_blobs(
                         work_size=int(work_size * k),
                         r_min=r_min * k, r_max=r_max * k,
                         n_scale=n_scale, log_thresh=log_thresh,
-                        plate_type=plate_type,
+                        plate_type=plate_type, stats=stats,
                     )
         return probe
 
@@ -879,6 +882,10 @@ def detect_blobs(
     has_chroma = (inside.size > 0
                   and float(inside.std()) >= config.BLOB_MONO_SAT_STD)
     sat = sat_full if has_chroma else None
+    if stats is not None:
+        # 무채색이면 색 게이트와 색 할인이 모두 무동작이 된다. 호출자가 그것을
+        # 모르면 색 슬라이더를 움직여도 결과가 안 바뀌는 이유를 알 수 없다.
+        stats["has_chroma"] = bool(has_chroma)
 
     kept: list[tuple[float, float, float, float]] = []
     # 극성. None = 양극성 모두 검출 후 병합(기본). True/False 로 고정하면

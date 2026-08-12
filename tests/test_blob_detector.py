@@ -179,3 +179,43 @@ def test_config_defaults_present():
     assert config.BLOB_MIN_T > 0
     assert config.BLOB_MIN_REL_SAT > 0
     assert 0 < config.BLOB_DISH_SHRINK <= 1.0
+
+
+def _monochrome_dish() -> np.ndarray:
+    """완전 무채색 접시 — 세 채널이 같으면 HSV 채도가 0 이다.
+
+    실측: 이 이미지의 ROI 채도 표준편차는 0.0 으로 BLOB_MONO_SAT_STD(2.0)
+    아래이고, 검출은 1개 나온다(빈 리스트가 아니라서 반환 형식 단정이 유효하다).
+    """
+    grey = np.full((600, 600, 3), 120, np.uint8)
+    cv2.circle(grey, (300, 300), 40, (170, 170, 170), -1)
+    return grey
+
+
+def test_detect_blobs_reports_has_chroma_without_changing_return():
+    """stats 를 주면 색 축 적용 여부를 알려준다. 반환 형식은 그대로여야 한다.
+
+    무채색 이미지(흑백 카메라·합성)에서는 blob_detector 가 색 게이트를 조용히
+    끄는데, 지금은 호출자가 그것을 알 수 없다. 반환값에 끼워 넣으면
+    detector.detect 와의 호환이 깨지므로 out-파라미터로 받는다.
+    """
+    stats: dict = {}
+    out = detect_blobs(_monochrome_dish(), stats=stats)
+    assert isinstance(out, list)
+    assert out, "이 합성 접시에서는 최소 1개가 검출돼야 한다"
+    for item in out:
+        assert len(item) == 4, "반환은 (x, y, radius, circularity) 4-튜플이어야 한다"
+    assert stats["has_chroma"] is False
+
+
+def test_detect_blobs_stats_is_optional():
+    """stats 를 주지 않아도 기존과 똑같이 동작해야 한다."""
+    assert detect_blobs(_monochrome_dish()) == detect_blobs(_monochrome_dish())
+
+
+def test_detect_blobs_reports_has_chroma_true_on_colour_dish():
+    """색이 있는 접시에서는 True 여야 한다 — 늘 False 를 넣는 구현을 막는다."""
+    stats: dict = {}
+    detect_blobs(_dish(colony_bgr=(60, 200, 90), agar_bgr=(200, 190, 160)),
+                 stats=stats)
+    assert stats["has_chroma"] is True

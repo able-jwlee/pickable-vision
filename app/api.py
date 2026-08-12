@@ -126,6 +126,7 @@ def _detect_and_score(
     img: np.ndarray, req: DetectRequest, resolved: dict
 ) -> list[Colony]:
     """검출 → 피킹 적합도 점수화 → Colony 리스트."""
+    stats: dict = {}
     circles = detect_blobs(
         img,
         min_t=resolved["min_t"],
@@ -147,7 +148,11 @@ def _detect_and_score(
         threshold_levels=resolved["threshold_levels"],
         min_circularity=resolved["min_circularity"],
         min_fill=resolved["min_fill"],
+        stats=stats,
     )
+    # 무채색 이미지에서는 색 축이 무동작이다. UI 가 색 그룹을 잠그고 이유를
+    # 표시할 수 있도록 판정 결과를 그대로 돌려준다.
+    resolved["has_chroma"] = stats.get("has_chroma", True)
     geom = [
         {"x": x, "y": y, "radius": r, "circularity": c}
         for x, y, r, c in circles
