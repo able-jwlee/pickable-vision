@@ -269,7 +269,6 @@ const approved = [
 | 필드 | 컨트롤 | 비고 |
 |---|---|---|
 | `sensitivity` 0~100 | 슬라이더 | 유일하게 자주 쓰는 노브 |
-| `polarity` | 선택 | `auto` 가 39장에서 판정 정확도 100% — 기본값 유지 |
 | `plate_type` | 선택 | `petri` / `well8` |
 
 **접시별 (펼쳐서 조절, 평소 건드릴 필요 없음)** — 크기 `min_diam_frac` ·
@@ -279,8 +278,14 @@ const approved = [
 기본값이 이미 sample/ 라벨 39장 실측 최적이다. **`min_roundness` 완화는 권하지 않는다** —
 같은 정밀도(82.8%)라면 감도를 내리는 쪽이 더 많이 맞힌다 (74.7% 대 72.5%).
 
-**전문가 (UI 에 노출 안 함)** — `min_circularity`(기본 0, 기각), `min_fill`(계수
-전용), `colour_credit`(현재 설정에서 전 그룹 손해 — §9 참고), `work_size`,
+**전문가 (UI 에 노출 안 함)** — `polarity`(자동 판정 39/39 정확하지만 틀리면
+검출이 붕괴한다 — 실측 `971.jpg` 98개→3개. 오퍼레이터가 원인을 되짚을 방법이
+없어 노출하지 않고, 마진이 애매하면 자동으로 양극성 검출로 되돌아가 스스로
+보호된다. `"both"` 는 개발자·지원용 되돌림 경로로 API 에는 남긴다),
+`min_circularity`(기본 0, 기각), `min_fill`(계수
+전용), `colour_credit`(현재 설정에서 전 그룹 손해 —
+[detection_parameters.md § 2](detection_parameters.md#2-알고리즘-파라미터--고급-접힘)
+참고), `work_size`,
 `candidate_source`, `threshold_levels`, `adaptive_scale`, raw `min_t`. 서로
 의존하는 축이라 오퍼레이터가 단독으로 바꾸면 캘리브레이션이 무효가 된다
 ([detection_parameters.md §0](detection_parameters.md#0-핵심-요약)).
@@ -359,7 +364,7 @@ const topLevel = colonies.filter((c) => c.parent_id === null)
   {!applied.has_chroma && (
     <p>이 이미지는 채도가 없어 색 기준이 적용되지 않습니다.</p>
   )}
-  {/* polarity, min_rel_sat 컨트롤 */}
+  {/* min_rel_sat 컨트롤 — polarity 는 오퍼레이터 UI 에 노출하지 않는다 */}
 </fieldset>
 ```
 
