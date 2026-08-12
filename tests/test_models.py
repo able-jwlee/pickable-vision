@@ -5,25 +5,18 @@ from app.models import DetectRequest
 
 
 def test_defaults_applied():
+    """기본값은 config 에서 온다. 값 자체가 아니라 **출처**를 고정한다 —
+    실측으로 최적값을 바꿀 때 테스트가 발목을 잡으면 안 된다."""
+    from app import config
+
     req = DetectRequest(image="x")
-    assert req.min_area == 6.0
-    assert req.max_area == 5000.0
-    assert req.min_circularity == 0.42
-    assert req.invert is True
-    assert req.tophat_kernel == 31
-    assert req.threshold_offset == 7
+    assert req.plate_type == "petri"
+    assert req.polarity == "auto"
+    assert req.min_solidity == config.BLOB_MIN_SOLIDITY
+    assert req.min_roundness == config.BLOB_MIN_ROUNDNESS
+    assert req.work_size == config.BLOB_WORK_SIZE
+    assert req.watershed_split is config.BLOB_WATERSHED_SPLIT
     assert req.mask_walls is True
-    assert req.split_touching is True
-
-
-def test_tophat_kernel_too_small_rejected():
-    with pytest.raises(ValidationError):
-        DetectRequest(image="x", tophat_kernel=1)
-
-
-def test_circularity_out_of_range_rejected():
-    with pytest.raises(ValidationError):
-        DetectRequest(image="x", min_circularity=1.5)
 
 
 def test_missing_both_sources_rejected():
@@ -41,21 +34,15 @@ def test_detect_request_accepts_abstract_fields():
     req = DetectRequest(
         image="Zm9v",  # base64 dummy
         sensitivity=50,
-        min_size=20,
-        max_size=80,
         edge_margin=40,
     )
     assert req.sensitivity == 50
-    assert req.min_size == 20
-    assert req.max_size == 80
     assert req.edge_margin == 40
 
 
 def test_detect_request_abstract_fields_default_to_none():
     req = DetectRequest(image="Zm9v")
     assert req.sensitivity is None
-    assert req.min_size is None
-    assert req.max_size is None
     assert req.edge_margin is None
 
 
@@ -63,4 +50,4 @@ def test_detect_request_rejects_out_of_range_abstract_field():
     with pytest.raises(ValidationError):
         DetectRequest(image="Zm9v", sensitivity=101)
     with pytest.raises(ValidationError):
-        DetectRequest(image="Zm9v", min_size=-1)
+        DetectRequest(image="Zm9v", edge_margin=-1)

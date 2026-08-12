@@ -18,7 +18,7 @@
    watershed가 이미지당 2,000~3,000개 파편을 만든다.
    → 스케일 정규화 LoG의 scale-space 국소최대로 크기를 스스로 추정한다.
 
-3. **ROI** — `_well_mask()`의 2×4 격자는 8웰 몰딩 plate 가정. 실제 샘플은 원형
+3. **ROI** — 8웰용 2×4 격자는 8웰 몰딩 plate 가정. 실제 샘플은 원형
    petri 접시 1개라 격자가 접시를 잘라냈다.
    → 접시 원을 HoughCircles로 직접 찾는다(밝기 극성 무관).
 
@@ -119,8 +119,8 @@ def plate_roi_with_scale(
     well8(사각 다웰)에는 접시 원이 없으므로 이미지 짧은 변을 기준으로 삼는다.
     """
     if plate_type == "well8":
-        from app.detector import _well_mask
-        return _well_mask(gray), float(min(gray.shape))
+        from app.well_plate import well_mask
+        return well_mask(gray), float(min(gray.shape))
     mask, circle = dish_roi(gray)
     ref = float(2 * circle[2]) if circle else float(min(gray.shape))
     return mask, ref
@@ -130,7 +130,7 @@ def plate_roi(gray: np.ndarray, plate_type: str) -> np.ndarray:
     """플레이트 내부 ROI 마스크.
 
     "petri" → 접시 원을 찾아 안쪽으로 수축.
-    "well8" → 기존 detector._well_mask 의 4×2 격자 (벽·프레임 제외).
+    "well8" → well_plate.well_mask 의 4×2 격자 (벽·프레임 제외).
 
     두 기하구조를 모두 지원해야 하는 이유: 이 프로젝트 하드웨어는 4×2 몰딩
     8웰 플레이트인데(tests/fixtures/agar_sample.jpg), sample/ 의 이미지는
@@ -144,8 +144,8 @@ def plate_roi(gray: np.ndarray, plate_type: str) -> np.ndarray:
         well8 ROI가 31개로 사각 플레이트인데 petri를 골랐다.
     """
     if plate_type == "well8":
-        from app.detector import _well_mask  # 순환 import 방지용 지역 import
-        return _well_mask(gray)
+        from app.well_plate import well_mask  # 순환 import 방지용 지역 import
+        return well_mask(gray)
     mask, _circle = dish_roi(gray)
     return mask
 
@@ -240,6 +240,89 @@ def log_candidates(
         (float(xi[i]), float(yi[i]), float(sigmas[si[i]] * math.sqrt(2)))
         for i in order
     ]
+
+
+def threshold_candidates(
+    gray: np.ndarray,
+    roi: np.ndarray,
+    bright: bool,
+    r_min: float,
+    r_max: float,
+    n_levels: int,
+    max_candidates: int,
+) -> list[tuple[float, float, float]]:
+    """여러 이진화 레벨의 연결성분 → (x, y, r) 후보. LoG 후보와 같은 형식.
+
+    LoG 와 **성격이 반대**다. LoG 는 봉우리면 무엇이든 올려 커버리지가 높지만
+    (93.4%) 후보가 지저분하다. 이쪽은 "연결된 덩어리"라는 조건을 이미 만족한
+    것만 올려 커버리지는 낮지만(89.7%) 순도가 훨씬 높다.
+
+    실측(39장) — 둘을 같은 게이트에 태웠을 때 정밀도 구간별 재현율:
+
+        정밀도 ~98%   LoG 23.0%   이진화 **58.5%**   ← 이진화 압승
+        정밀도 ~94%   LoG 59.0%   이진화 **67.3%**
+        정밀도 ~88%   LoG 68.5%   이진화 68.2%       ← 교차점
+        정밀도 ~81%   LoG **72.1%**  이진화 69.3%
+        정밀도 ~65%   LoG **74.8%**  이진화 71.3%
+
+    높은 정밀도를 원할수록 게이트를 조여야 하고, 그때는 후보가 깨끗한 쪽이
+    유리하다. 반대로 재현율을 짜낼 때는 커버리지가 높은 쪽이 이긴다.
+
+    **레벨을 늘려도 커버리지 천장은 안 오른다** — 12/24/36 레벨에서 재현율
+    67.9/70.8/71.3%. 흐린 콜로니는 어떤 절대 임계값에서도 배경과 갈라지지
+    않는다는 원리적 한계다(vague 그룹 커버리지 74%, LoG 는 97%).
+
+    백분위로 레벨을 잡는 이유: 전역 고정값을 쓰면 접시마다 밝기가 달라 대부분의
+    레벨이 무의미해진다.
+    """
+    g = gray if bright else (255 - gray)
+    inside = g[roi > 0]
+    if inside.size < 100:
+        return []
+    lo, hi = np.percentile(inside, [5, 95])
+    if not hi > lo:
+        return []
+    k3 = np.ones((3, 3), np.uint8)
+    out: list[tuple[float, float, float]] = []
+    seen: set[tuple[int, int, int]] = set()
+    for t in np.linspace(float(lo), float(hi), n_levels):
+        _, m = cv2.threshold(g, float(t), 255, cv2.THRESH_BINARY)
+        m = cv2.morphologyEx(cv2.bitwise_and(m, roi), cv2.MORPH_OPEN, k3)
+        n, _lab, stats, cents = cv2.connectedComponentsWithStats(m, 8)
+        for i in range(1, n):
+            a = stats[i, cv2.CC_STAT_AREA]
+            if a < 6:
+                continue
+            r = math.sqrt(a / math.pi)
+            if r < r_min or r > r_max:
+                continue
+            x, y = float(cents[i][0]), float(cents[i][1])
+            # 같은 성분이 여러 레벨에서 반복 나온다. 격자로 거칠게 중복 제거 —
+            # 촘촘하게 하면 중복이 남아 게이트 비용만 늘어난다.
+            key = (int(x / 3), int(y / 3), int(r / 3))
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append((x, y, r))
+            if len(out) >= max_candidates:
+                return out
+    return out
+
+
+def merge_candidates(
+    *groups: list[tuple[float, float, float]],
+) -> list[tuple[float, float, float]]:
+    """여러 후보 집합을 합치고 같은 자리를 하나로 줄인다."""
+    seen: set[tuple[int, int, int]] = set()
+    out: list[tuple[float, float, float]] = []
+    for g in groups:
+        for x, y, r in g:
+            key = (int(x / 3), int(y / 3), int(r / 3))
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append((x, y, r))
+    return out
 
 
 def estimate_bright(gray: np.ndarray, roi: np.ndarray) -> bool | None:
@@ -679,6 +762,8 @@ def detect_blobs(
     ink_sigma: float = config.BLOB_INK_SIGMA,
     contour_levels: int = config.BLOB_CONTOUR_LEVELS,
     contour_span: float = config.BLOB_CONTOUR_SPAN,
+    candidate_source: str = config.BLOB_CANDIDATE_SOURCE,
+    threshold_levels: int = config.BLOB_THRESHOLD_LEVELS,
     radius_mode: str = config.BLOB_RADIUS_MODE,
     radius_scale: float = config.BLOB_RADIUS_SCALE,
     radius_alpha: float = config.BLOB_RADIUS_ALPHA,
@@ -694,6 +779,9 @@ def detect_blobs(
     n_scale: int = config.BLOB_N_SCALE,
     log_thresh: float = config.BLOB_LOG_THRESH,
     plate_type: str = "petri",
+    # 호출자가 dict 를 주면 검출 중 알아낸 사실을 채워 준다. 반환값에 끼워 넣지
+    # 않는 이유는 detector.detect 와 형식이 같아야 하기 때문이다(모듈 docstring).
+    stats: dict | None = None,
 ) -> list[tuple[float, float, float, float]]:
     """콜로니를 검출해 원본 좌표계의 (x, y, radius, circularity) 리스트를 반환.
 
@@ -739,7 +827,7 @@ def detect_blobs(
             force_bright=force_bright,
             work_size=work_size, r_min=r_min,
             r_max=r_max, n_scale=n_scale, log_thresh=log_thresh,
-            plate_type=plate_type,
+            plate_type=plate_type, stats=stats,
         )
         if len(probe) >= config.BLOB_SCALE_PROBE_MIN:
             s0 = min(1.0, work_size / max(h, w))
@@ -765,7 +853,7 @@ def detect_blobs(
                         work_size=int(work_size * k),
                         r_min=r_min * k, r_max=r_max * k,
                         n_scale=n_scale, log_thresh=log_thresh,
-                        plate_type=plate_type,
+                        plate_type=plate_type, stats=stats,
                     )
         return probe
 
@@ -794,6 +882,10 @@ def detect_blobs(
     has_chroma = (inside.size > 0
                   and float(inside.std()) >= config.BLOB_MONO_SAT_STD)
     sat = sat_full if has_chroma else None
+    if stats is not None:
+        # 무채색이면 색 게이트와 색 할인이 모두 무동작이 된다. 호출자가 그것을
+        # 모르면 색 슬라이더를 움직여도 결과가 안 바뀌는 이유를 알 수 없다.
+        stats["has_chroma"] = bool(has_chroma)
 
     kept: list[tuple[float, float, float, float]] = []
     # 극성. None = 양극성 모두 검출 후 병합(기본). True/False 로 고정하면
@@ -822,10 +914,31 @@ def detect_blobs(
         polarities = (True, False)
 
     for bright in polarities:
-        cands = log_candidates(
-            gray, roi, bright, r_min=r_min, r_max=r_max, n_scale=n_scale,
-            log_thresh=log_thresh, max_candidates=config.BLOB_MAX_CANDIDATES,
-        )
+        # 후보 생성 — 성격이 다른 두 방식을 합친다. 실측(39장)에서 합집합이
+        # LoG 단독보다 **모든 운영점에서 +2.9~3.5%p** 위다:
+        #   정밀도 ~95.5% → 55.1% → **58.0%**
+        #   정밀도 ~88.5% → 68.5% → **72.0%**   ← 기본 운영점
+        #   정밀도 ~65.3% → 74.8% → **77.8%**
+        # 교환이 아니라 곡선 전체가 평행 이동한다. LoG 는 커버리지(93.4%)를,
+        # 이진화는 후보 순도를 기여한다 — 서로 다른 것을 보므로 합쳐진다.
+        #
+        # 단 정밀도 93% 이상에서는 **이진화 단독**이 합집합보다 낫다(94%에서
+        # 67.3% 대 62.9%). LoG 후보가 그 구간에서는 잡음으로만 작용하기 때문이다.
+        # 계수(CFU)처럼 정밀도가 중요한 용도라면 candidate_source="threshold".
+        cands = []
+        if candidate_source in ("union", "log"):
+            cands.append(log_candidates(
+                gray, roi, bright, r_min=r_min, r_max=r_max, n_scale=n_scale,
+                log_thresh=log_thresh,
+                max_candidates=config.BLOB_MAX_CANDIDATES,
+            ))
+        if candidate_source in ("union", "threshold"):
+            cands.append(threshold_candidates(
+                gray, roi, bright, r_min=r_min, r_max=r_max,
+                n_levels=threshold_levels,
+                max_candidates=config.BLOB_MAX_CANDIDATES,
+            ))
+        cands = merge_candidates(*cands)
         kept += colony_gate(
             gray, sat, roi, cands, bright,
             min_t=min_t, min_rel_sat=min_rel_sat,

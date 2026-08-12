@@ -1,78 +1,52 @@
-import math
+"""오퍼레이터용 0~100 스케일 → 내부 파라미터 매핑.
 
+top-hat 경로를 제거하면서 그쪽 전용이던 세 매핑(sensitivity_to_offset,
+min_size_to_area, max_size_to_area)도 함께 사라졌다. 남은 둘만 검증한다.
+
+방향성을 테스트로 고정하는 이유: 뒤집히면 오퍼레이터 UI 슬라이더가 반대로
+동작하는데 눈으로는 알아채기 어렵다.
+"""
 import pytest
 
-from app.param_mapping import (
-    edge_to_margin_px,
-    max_size_to_area,
-    min_size_to_area,
-    sensitivity_to_offset,
-)
+from app import config
+from app.param_mapping import edge_to_margin_px, sensitivity_to_min_t
 
 
-# ---- Anchor values (spec §4.2) — defaults must round-trip to current server defaults ----
+def test_sensitivity_anchor_matches_server_default():
+    """감도 50 은 서버 기본값(config.BLOB_MIN_T)과 같아야 한다.
 
-def test_sensitivity_default_matches_current_threshold_offset():
-    assert sensitivity_to_offset(50) == 7
-
-
-def test_sensitivity_extremes():
-    assert sensitivity_to_offset(0) == -3
-    assert sensitivity_to_offset(100) == 15
-
-
-def test_min_size_default_matches_current_min_area():
-    # min_size=20 should give ~min_area=6 (current DEFAULT_MIN_AREA)
-    assert min_size_to_area(20) == pytest.approx(6.0, rel=0.10)
-
-
-def test_min_size_extremes():
-    # r_min at 0 = 1px → area = π
-    assert min_size_to_area(0) == pytest.approx(math.pi, rel=0.01)
-    # r_min at 100 = 10px → area = 100π
-    assert min_size_to_area(100) == pytest.approx(math.pi * 100, rel=0.01)
-
-
-def test_max_size_default_matches_current_max_area():
-    # max_size=75 should give ~max_area=5000 (current DEFAULT_MAX_AREA)
-    assert max_size_to_area(75) == pytest.approx(5000.0, rel=0.01)
-
-
-def test_max_size_extremes():
-    # r_max at 0 = 10px → area = 100π
-    assert max_size_to_area(0) == pytest.approx(math.pi * 100, rel=0.01)
-    # r_max at 100 = 50px → area = 2500π
-    assert max_size_to_area(100) == pytest.approx(math.pi * 2500, rel=0.01)
-
-
-def test_edge_default_matches_current_pick_edge_margin():
-    """슬라이더 0이 서버 기본값(여백 없음)에 앵커돼야 한다.
-
-    피킹 필터는 기본으로 껐다(config 주석 참조) — 검출된 것 = 피킹 대상.
-    그래서 앵커가 예전 슬라이더 40(=60px)에서 0(=0px)으로 옮겨졌다.
-    UI 기본값과 서버 기본값이 어긋나면 UI가 매번 덮어써서 조용히 필터가
-    켜진다(실제로 pick_radius_max 에서 겪은 문제).
+    상수를 하드코딩하지 않고 관계를 검사한다. 기본값을 옮길 때 앵커를 같이
+    옮기는 것을 잊으면, sensitivity 를 보내는 클라이언트와 보내지 않는
+    클라이언트가 서로 다른 감도로 동작한다.
     """
-    from app import config
-    assert edge_to_margin_px(0) == config.PICK_EDGE_MARGIN
+    assert sensitivity_to_min_t(50) == pytest.approx(config.BLOB_MIN_T)
 
 
-def test_edge_extremes():
+def test_sensitivity_direction_higher_means_more_sensitive():
+    """감도를 올리면 t 문턱이 내려간다 (= 흐린 콜로니까지 잡는다)."""
+    assert sensitivity_to_min_t(0) > sensitivity_to_min_t(50)
+    assert sensitivity_to_min_t(50) > sensitivity_to_min_t(100)
+
+
+def test_sensitivity_extremes_stay_in_measured_range():
+    """양 끝이 실측한 곡선 범위 안에 있어야 한다 (t=90 ~ t=12)."""
+    assert sensitivity_to_min_t(0) == pytest.approx(90.0)
+    assert sensitivity_to_min_t(100) == pytest.approx(12.0)
+
+
+def test_edge_margin_anchor_and_direction():
+    """여백 0 은 제한 없음, 올릴수록 안쪽으로 더 줄인다."""
     assert edge_to_margin_px(0) == 0
-    assert edge_to_margin_px(100) == 150
+    assert edge_to_margin_px(100) > edge_to_margin_px(50) > edge_to_margin_px(0)
 
 
-# ---- Monotonicity: direction must never reverse ----
+@pytest.mark.parametrize("fn", [edge_to_margin_px])
+def test_monotonic_increasing(fn):
+    vals = [fn(v) for v in range(0, 101, 10)]
+    assert vals == sorted(vals), f"{fn.__name__} 이 단조증가가 아니다: {vals}"
 
-@pytest.mark.parametrize("fn", [
-    sensitivity_to_offset,
-    min_size_to_area,
-    max_size_to_area,
-    edge_to_margin_px,
-])
-def test_mapping_is_monotonic_increasing(fn):
-    prev = fn(0)
-    for v in range(1, 101):
-        cur = fn(v)
-        assert cur >= prev, f"{fn.__name__} not monotonic at v={v}: {prev} → {cur}"
-        prev = cur
+
+def test_sensitivity_monotonic_decreasing():
+    """감도만 방향이 반대다 — 올릴수록 문턱이 내려간다."""
+    vals = [sensitivity_to_min_t(v) for v in range(0, 101, 10)]
+    assert vals == sorted(vals, reverse=True), f"단조감소가 아니다: {vals}"

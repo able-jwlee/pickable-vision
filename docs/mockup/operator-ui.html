@@ -382,8 +382,9 @@
       <div class="stat" style="margin-left:auto;">
         <span class="label">보기</span>
         <select id="view-mode" class="plate-select" style="width:auto;">
-          <option value="server" selected>서버가 표시한 이미지</option>
-          <option value="overlay">원본 + 좌표 오버레이</option>
+          <option value="overlay" selected>좌표 오버레이 (확대해도 선명)</option>
+          <option value="server">서버가 표시한 이미지</option>
+          <option value="clean">표시 없이 원본만</option>
         </select>
       </div>
     </div>
@@ -444,17 +445,6 @@
     </div>
 
     <div class="control-group">
-      <h2>용기 종류</h2>
-      <select id="plate-type" class="plate-select">
-        <option value="petri" selected>페트리 접시 (원형)</option>
-        <option value="well8">웰 플레이트 (4×2)</option>
-      </select>
-      <div class="image-meta" style="margin-top:6px;">
-        접시 위치·크기와 밝기는 자동으로 찾습니다.
-      </div>
-    </div>
-
-    <div class="control-group">
       <h2>콜로니 색</h2>
       <select id="polarity" class="plate-select">
         <option value="auto" selected>자동 — 양쪽 모두 검출</option>
@@ -472,68 +462,82 @@
       <h2>프리셋</h2>
       <select id="preset" class="plate-select">
         <option value="default" selected>기본 (권장)</option>
-        <option value="small">작은 콜로니가 많음</option>
-        <option value="faint">흐려서 잘 안 보임</option>
-        <option value="strict">오검출을 줄이고 싶음</option>
-        <option value="maxrecall">최대한 많이 찾기</option>
+        <option value="custom">사용자 지정</option>
+        <option value="strict">덜 찾더라도 정확하게</option>
+        <option value="maxrecall">놓치지 않게 많이 찾기</option>
       </select>
       <div class="image-meta" id="preset-note" style="margin-top:6px;"></div>
     </div>
 
+    <!-- 선별 4축 (크기·모양·색상·분리) + 감도.
+         계층을 나눈 이유는 실측상 넷의 성격이 완전히 다르기 때문이다.
+         감도와 크기는 실제로 조절할 값이고, 모양과 색상은 직관과 실측이 반대라
+         경고와 함께 접어두었다. 자세한 근거는 각 축의 캡션 참조. -->
     <div class="control-group">
-      <h2>검출 파라미터</h2>
-
+      <h2>감도</h2>
       <div class="slider-row">
         <div class="slider-header">
-          <span class="name">감도</span>
+          <span class="name">검출 감도</span>
           <span class="value" id="v-sensitivity">50</span>
         </div>
         <input type="range" min="0" max="100" value="50" data-target="v-sensitivity" data-field="sensitivity">
         <div class="slider-caption"><span>← 엄격 (오검출 적게)</span><span>민감 (더 많이 잡기) →</span></div>
         <div class="image-meta" id="hint-sensitivity"></div>
+        <div class="image-meta" style="margin-top:4px;">
+          정밀도와 재현율을 맞바꾸는 <b>유일한 실질 축</b>입니다.
+          아래 네 축은 "무엇을 콜로니로 볼지"를 정하고, 이건 "얼마나 확신해야
+          인정할지"를 정합니다.
+        </div>
       </div>
+    </div>
 
+    <div class="control-group">
+      <h2>선별 기준</h2>
+
+      <!-- ① 크기 -->
       <div class="slider-row">
         <div class="slider-header">
-          <span class="name">콜로니 크기</span>
+          <span class="name">크기 (Size)</span>
           <span class="value" id="v-min-size">제한 없음</span>
         </div>
         <input type="range" min="0" max="30" value="0" step="1" data-target="v-min-size" data-field="min_size">
         <div class="slider-caption"><span>← 작은 것도 검출</span><span>큰 것만 검출 →</span></div>
-        <div class="image-meta">이보다 작은 것은 무시합니다. <b>접시 지름 대비 %</b>라 해상도·카메라가 바뀌어도 같은 뜻입니다 — 실측 콜로니 분포는 1~45%, 중앙값 7%.</div>
-      </div>
-    </div>
-
-    <!-- 프리셋이 설정하는 값들. 슬라이더로 중복 노출하면 프리셋과 어긋난 조합을
-         만들 수 있어 숨겼다. 진단이 필요할 때만 펼친다.
-
-         제거한 것:
-         · 피킹 최대 반지름 — 피킹 필터를 껐으므로(검출된 것 = 피킹 대상) 이제
-           켜면 망가지는 knob이다. 실제로 UI 기본값 20이 서버 기본값 0을 덮어써
-           피킹 대상이 매번 0이 되는 버그를 냈다.
-         · 검출 경로(blob/tophat) — 개발자 스위치다. 오퍼레이터가 고를 근거가 없고
-           tophat을 고르면 페트리 접시에서 정밀도가 0.85%로 떨어진다. -->
-    <details class="control-group">
-      <summary style="cursor:pointer; font-weight:600; font-size:13px;">진단용 (프리셋이 설정함)</summary>
-
-      <div class="slider-row" style="margin-top:12px;">
-        <div class="slider-header">
-          <span class="name">색 보정</span>
-          <span class="value" id="v-colour">1.0</span>
+        <div class="image-meta">
+          이보다 작은 것은 무시합니다. <b>접시 지름 대비 %</b>라 해상도·카메라가
+          바뀌어도 같은 뜻입니다 — 실측 분포 1~45%, 중앙값 7%.
+          <br><b style="color:#93e6a8">권장</b> — 알고리즘이 추측할 수 없는
+          <b>사용자 의도</b>를 표현하는 축입니다. "이 접시에선 큰 것만" 같은 것.
         </div>
-        <input type="range" min="10" max="80" value="10" step="5" data-target="v-colour" data-field="colour_credit">
-        <div class="slider-caption"><span>← 끔</span><span>색이 뚜렷하면 관대 →</span></div>
       </div>
 
+      <!-- ④ 분리 -->
       <div class="slider-row">
-        <div class="slider-header"><span class="name">처리 해상도</span></div>
-        <select id="work-size" class="plate-select">
-          <option value="768">768 (빠름)</option>
-          <option value="1024" selected>1024 (기본)</option>
-          <option value="1536">1536 (작은 콜로니)</option>
-        </select>
+        <div class="slider-header">
+          <span class="name">분리 (Separation)</span>
+        </div>
+        <!-- .switch 는 40px 고정 폭 토글 전용이다. 그 안에 텍스트를 넣으면
+             40px 에 갇혀 한 줄에 한 단어씩 떨어진다. 라벨은 .toggle-row 로
+             바깥에 두고, .switch 안에는 input 과 .slider-btn 만 넣는다. -->
+        <div class="toggle-row" style="margin:4px 0 10px;">
+          <span>붙은 콜로니를 개별로 나누기</span>
+          <label class="switch">
+            <input type="checkbox" id="watershed-split" checked>
+            <span class="slider-btn"></span>
+          </label>
+        </div>
+        <div class="image-meta">
+          <b style="color:#93e6a8">권장 — 켠 상태로 두세요.</b>
+          이 프로젝트 최대 개선 중 하나이고 <b>끄면 나빠지기만 합니다</b>
+          (실측: 한 접시에서 검출 24 → 20).
+          <br>분리 강도 슬라이더는 <b>뺐습니다</b> — 기본값에서 어느 쪽으로
+          움직여도 같은 정밀도를 감도로 만든 것보다 못 맞혔습니다
+          (적극 68.6% 대 69.4%, 소극 65.0% 대 66.5%).
+          하나를 둘로 잘못 쪼개는 게 눈에 보일 때만 끄세요.
+        </div>
       </div>
-    </details>
+
+      <!-- ② 모양 · ③ 색상 — 경고와 함께 접어둔다 -->
+    </div>
 
     <div class="button-row stack">
       <button id="btn-reset">기본값으로</button>
@@ -623,16 +627,13 @@ const GROUP_LABELS = {
 const HIRES_WARN_PX = 1600;
 
 // 슬라이더 기본값 (reset 이 참조). 서버 기본값과 일치시켜 둔다 —
-// 감도 50 → min_t 35, 크기 제한 없음, 색 보정 끔, 해상도 1024.
+// 감도 50 → min_t 20 (서버 기본값). 나머지는 전부 서버 기본값을 쓴다.
 const DEFAULTS = {
   sensitivity: 50,
   // 콜로니 크기 슬라이더 하나 = 최소 크기 (접시 지름 대비 %). 0 = 제한 없음.
   // 상한은 두지 않는다 — 상한의 용도는 병합된 큰 덩어리를 자르는 것인데,
   // 피킹 필터를 끈 방향(검출된 것 = 피킹 대상)과 어긋난다.
   min_size:    0,
-  colour_credit: 10,  // 슬라이더는 10배 정수 (10 = 1.0배 = 끔)
-  work_size:   '1024',
-  plate_type:  'petri',
   polarity:    'auto',
 };
 
@@ -650,51 +651,51 @@ const DEFAULTS = {
 // 오검출 하나는 로봇이 빈 한천을 찍는 것과 같다.
 // ============================================================
 const PRESETS = {
+  // 슬라이더를 직접 만지면 여기로 전환된다. 값은 건드리지 않는다 —
+  // 프리셋 이름이 실제 설정과 어긋나는 것을 막는 용도일 뿐이다.
+  custom: {
+    label: '슬라이더를 직접 조정한 상태입니다. 아래 감도 캡션의 실측 수치를 보세요.',
+    values: null,
+  },
   default: {
-    label: '기본값 — 정밀도 86% · 재현율 65%. 100개 집으면 빈 웰 약 14개. '
+    label: '기본값 — 정밀도 82% · 재현율 76%. 100개 집으면 빈 웰 약 18개. '
          + '접시 극성은 자동 판정합니다.',
     values: {},
   },
-  small: {
-    label: '작은 콜로니가 많은 접시. 처리 해상도를 올려 작은 것까지 잡습니다. '
-         + '다른 조건에서는 정밀도를 크게 잃으니 확실할 때만 쓰세요.',
-    values: { work_size: '1536' },
-  },
-  faint: {
-    label: '흐린 접시. 색이 뚜렷하면 감도 요구를 낮춥니다. '
-         + '흐린 조건은 기본값에서도 재현율 32.5% 로 가장 약한 그룹입니다 — '
-         + '조명·배지 대비를 올리는 것이 알고리즘보다 효과가 큽니다.',
-    values: { colour_credit: 15 },
-  },
-  // 감도 42 = min_t 약 35 = **이전 기본값**. 측정된 지점이라 라벨의 수치가
-  // 실측이다. 임의의 감도값을 쓰면 그 지점의 성적을 모르는 채 라벨을 붙이게 된다.
+  // 감도 43 = min_t 30, 감도 81 = min_t 15 — 둘 다 실측한 지점이다.
+  // 감도값은 sensitivity_to_min_t 를 **역산해서** 구했다. 어림짐작으로 넣으면
+  // 라벨의 정밀도·재현율이 그 지점의 실측값이 아니게 된다(실제로 그럴 뻔했다).
+  // 임의의 감도값을 쓰면 그 지점의 성적을 모르는 채 라벨을 붙이게 된다.
+  //
+  // **이 수치들은 서버가 바뀌면 함께 갱신해야 한다.** 이번 세션에만 세 번
+  // 어긋났다. 근본 해결은 JS 복제를 없애고 applied_params 로 받은 값을
+  // 표시하는 것이다(React 전환 시 처리).
   strict: {
-    label: '오검출을 줄입니다 — 정밀도 94% · 재현율 60%. '
-         + '빈 웰이 14개에서 6개로 줄고, 대신 놓치는 콜로니가 늘어납니다.',
-    values: { sensitivity: 42 },
+    label: '오검출을 줄입니다 — 정밀도 89% · 재현율 71%. '
+         + '빈 웰이 18개에서 11개로 줄고, 대신 놓치는 콜로니가 늘어납니다.',
+    values: { sensitivity: 43 },
   },
   maxrecall: {
-    label: '최대한 많이 찾기 — 실측 정밀도 70% · 재현율 71%. '
-         + '3개 중 1개가 빈 웰이 되므로, 놓치는 것이 빈 웰보다 훨씬 '
+    label: '최대한 많이 찾기 — 실측 정밀도 73% · 재현율 77%. '
+         + '4개 중 1개가 빈 웰이 되므로, 놓치는 것이 빈 웰보다 훨씬 '
          + '아까울 때만 쓰세요.',
-    values: { sensitivity: 90 },
+    values: { sensitivity: 81 },
   },
 };
 
 // 감도 슬라이더 → 서버 min_t. app/param_mapping.py 의 sensitivity_to_min_t 와
 // **같은 식이어야 한다.** 어긋나면 UI 힌트가 실제 동작과 다른 값을 말한다.
-// 0~50: 90 → 25,  50~100: 25 → 12   (50 = 서버 기본값 min_t 25)
+// 0~50: 90 → 20,  50~100: 20 → 12   (50 = 서버 기본값 min_t 20)
 function sensitivityToMinT(v) {
-  return v <= 50 ? 90 - (v / 50) * 65 : 25 - ((v - 50) / 50) * 13;
+  return v <= 50 ? 90 - (v / 50) * 70 : 20 - ((v - 50) / 50) * 8;
 }
 
-// 실측 곡선 (sample/ 39장 · 접시별 극성 자동 판정 + solidity 0.75 반영 후)
+// 실측 곡선 (sample/ 라벨 39장 · 2026-08-07 재측정, 후보 합집합 + 원형도 해제 반영)
 const SENSITIVITY_HINTS = [
-  [12, '정밀도 63% · 재현율 74%'],
-  [15, '정밀도 70% · 재현율 71%'],
-  [20, '정밀도 80% · 재현율 68%'],
-  [25, '정밀도 86% · 재현율 65%'],
-  [35, '정밀도 94% · 재현율 60%'],
+  [15, '정밀도 73% · 재현율 77%'],
+  [20, '정밀도 82% · 재현율 76%'],
+  [25, '정밀도 87% · 재현율 73%'],
+  [30, '정밀도 89% · 재현율 71%'],
 ];
 function sensitivityHint(v) {
   const t = sensitivityToMinT(v);
@@ -731,7 +732,6 @@ const el = {
   statTotal:   document.getElementById('stat-total'),
   statPick:    document.getElementById('stat-pick'),
   viewMode:    document.getElementById('view-mode'),
-  workSize:    document.getElementById('work-size'),
   hintSens:    document.getElementById('hint-sensitivity'),
   legendInfo:  document.getElementById('legend-info'),
   sampleSelect: document.getElementById('sample-select'),
@@ -745,8 +745,8 @@ const el = {
   btnReset:    document.getElementById('btn-reset'),
   btnApply:    document.getElementById('btn-apply'),
   btnSend:     document.getElementById('btn-send'),
-  plateType:   document.getElementById('plate-type'),
   polarity:    document.getElementById('polarity'),
+  watershed:   document.getElementById('watershed-split'),
 };
 
 // ============================================================
@@ -767,14 +767,20 @@ function relayoutOverlays() {
 
 function applyViewMode() {
   const mode = el.viewMode.value;
-  const hasResult = !!STATE.resultSrc;
-  if (mode === 'server' && hasResult) {
-    el.img.src = STATE.resultSrc;
-    el.svg.style.display = 'none';
-  } else {
-    if (STATE.originalSrc) el.img.src = STATE.originalSrc;
-    el.svg.style.display = '';
+  if (mode === 'server') {
+    // 서버 렌더 이미지는 요청할 때만 받는다. 없으면 다시 검출해서 받아온다 —
+    // 조용히 좌표 오버레이를 보여주면 보기를 바꿨는데 화면이 그대로라 혼란스럽다.
+    if (STATE.resultSrc) {
+      el.img.src = STATE.resultSrc;
+      el.svg.style.display = 'none';
+    } else if (STATE.colonies.length) {
+      runDetect();
+    }
+    return;
   }
+  if (STATE.originalSrc) el.img.src = STATE.originalSrc;
+  // clean = 표시 없이 원본만. 오검출인지 진짜인지 눈으로 볼 때 쓴다.
+  el.svg.style.display = (mode === 'clean') ? 'none' : '';
 }
 
 // ============================================================
@@ -788,6 +794,10 @@ function applyViewMode() {
 // 네모인 이유: 콜로니가 원형이라 원을 그리면 윤곽선과 겹쳐 표시인지 콜로니인지
 // 구분이 안 된다. 직선 테두리는 한천의 원형·불규칙 패턴과 형태가 달라 눈에 띈다.
 const MARKER_PAD = 1.35;   // app/config.py 의 DRAW_MARKER_PAD 와 같은 값
+
+function serverBase() {
+  return el.serverUrl.value.trim().replace(/\/$/, '');
+}
 
 function renderColonies(colonies) {
   const frag = document.createDocumentFragment();
@@ -881,7 +891,7 @@ function renderImageMeta(sample, missing) {
     html += `<span class="miss">이미지를 찾을 수 없습니다 — <code>sample/</code> 디렉터리가 필요합니다 (git 미포함)</span>`;
   } else if (sample.group === 'fixture') {
     // 이 픽스처만 4×2 몰딩 웰 플레이트다. 나머지 sample/* 는 원형 페트리 접시.
-    html += `<span class="warn">이 이미지는 <b>웰 플레이트</b>입니다 — 용기 종류를 「웰 플레이트」로 바꾸세요.</span>`;
+    html += `<span class="warn">이 이미지는 <b>웰 플레이트</b>입니다 — 검출기는 원형 접시 기준이라 결과가 부정확합니다 (그 포맷은 정답 라벨이 없어 성능이 측정된 적 없습니다).</span>`;
   }
   el.imageMeta.innerHTML = html;
 }
@@ -901,7 +911,7 @@ function loadSampleImage(index) {
   clearColonies();
   resetStats();
   renderImageMeta(sample, false);
-  STATE.originalSrc = '../../' + sample.path;
+  STATE.originalSrc = serverBase() + '/image?path=' + encodeURIComponent(sample.path);
 
   return new Promise(resolve => {
     el.img.onload = () => {
@@ -919,7 +929,9 @@ function loadSampleImage(index) {
       el.legendInfo.textContent = `${sample.name} 로드 실패`;
       resolve();
     };
-    el.img.src = '../../' + sample.path;
+    // 서버에서 받는다. 이전에는 '../../' + path 로 로컬 파일을 읽었는데,
+    // UI 를 file:// 로 열 때만 통하고 서버를 배포하면 깨진다.
+    el.img.src = serverBase() + '/image?path=' + encodeURIComponent(sample.path);
   });
 }
 
@@ -979,19 +991,19 @@ function buildPayload() {
   const payload = {
     // method 는 보내지 않는다 — 서버 기본값(blob)을 쓴다. tophat 은 개발자용이고
     // 페트리 접시에서 정밀도가 0.85%로 떨어져 UI에서 고를 수 있으면 안 된다.
-    plate_type:  el.plateType.value,
     polarity:    el.polarity.value,
     // 추상 감도(0~100)를 그대로 보낸다. 서버가 min_t 로 매핑한다.
     sensitivity: sliderVal('sensitivity'),
     // 크기 창은 접시 지름 대비 **비율**. 슬라이더는 %라 100으로 나눈다.
     min_diam_frac: sliderVal('min_size') / 100,
     // 색 보정 슬라이더는 10배 정수 (10 = 1.0배 = 끔)
-    colour_credit: sliderVal('colour_credit') / 10,
-    work_size:     +el.workSize.value,
+    // ② 분리 — 켜고 끄는 것만. 강도는 서버 기본값(1.5, 실측 최적)을 쓴다.
+    watershed_split:  el.watershed.checked,
     // pick_radius_max 도 보내지 않는다 — 피킹 필터는 서버에서 껐다
     // (검출된 것 = 피킹 대상). 여기서 값을 보내면 필터가 조용히 켜진다.
-    // 좌표와 표시 이미지를 한 응답에 함께 받는다.
-    return_image:    true,
+    // 표시는 좌표로 그린다(응답 3KB 대 이미지 114KB, 확대해도 선명, 상호작용 가능).
+    // 서버 렌더 이미지는 「보기」에서 고를 때만 요청한다.
+    return_image:    el.viewMode.value === 'server',
     image_max_width: 1600,
   };
   if (STATE.imageSource === 'sample') {
@@ -1006,7 +1018,7 @@ async function runDetect() {
   showLoading();
   clearColonies();
   setSendButton(0, false);
-  const server = el.serverUrl.value.trim().replace(/\/$/, '');
+  const server = serverBase();
 
   // 페이로드 조립도 try 안에서 한다. 밖에 두면 여기서 난 예외(예: 컨트롤 id가
   // 바뀌어 el.xxx 가 null)가 showError 를 못 거쳐 로딩 표시가 영원히 남고,
@@ -1090,7 +1102,6 @@ function sendToRobot() {
 // 이벤트 바인딩
 // ============================================================
 function sliderLabel(field, val) {
-  if (field === 'colour_credit') return (val / 10).toFixed(1) + '배';
   if (field === 'min_size') return val === 0 ? '제한 없음' : val + '% 이상';
   return String(val);
 }
@@ -1101,6 +1112,7 @@ document.querySelectorAll('input[type="range"]').forEach(input => {
     const val = +e.target.value;
     const target = document.getElementById(e.target.dataset.target);
     if (target) target.textContent = sliderLabel(field, val);
+    markCustom();
     if (field === 'sensitivity') el.hintSens.textContent = sensitivityHint(val);
   });
 });
@@ -1129,7 +1141,6 @@ function applyDefaults(overrides) {
   const map = {
     sensitivity:     DEFAULTS.sensitivity,
     min_size:        DEFAULTS.min_size,
-    colour_credit:   DEFAULTS.colour_credit,
     ...(overrides || {}),
   };
   document.querySelectorAll('input[type="range"]').forEach(input => {
@@ -1140,16 +1151,29 @@ function applyDefaults(overrides) {
       if (target) target.textContent = sliderLabel(field, map[field]);
     }
   });
-  el.plateType.value = DEFAULTS.plate_type;
   el.polarity.value  = (overrides && overrides.polarity) || DEFAULTS.polarity;
-  el.workSize.value  = (overrides && overrides.work_size) || DEFAULTS.work_size;
+  // 끄면 나빠지기만 하므로 프리셋 적용 시 항상 켠 상태로 되돌린다.
+  el.watershed.checked = true;
   el.hintSens.textContent = sensitivityHint(map.sensitivity);
 }
 
 function applyPreset(name) {
   const p = PRESETS[name] || PRESETS.default;
-  applyDefaults(p.values);
+  // values: null 은 "값을 건드리지 말라"는 뜻 (사용자 지정).
+  if (p.values !== null) applyDefaults(p.values);
   document.getElementById('preset-note').textContent = p.label;
+}
+
+// 슬라이더·스위치를 직접 만지면 프리셋을 「사용자 지정」으로 바꾼다.
+//
+// 이게 없으면 화면이 거짓말을 한다 — 「덜 찾더라도 정확하게」를 고른 뒤 감도를
+// 90 으로 올려도 프리셋 이름과 설명("정밀도 94%")이 그대로 남아, 나중에
+// 화면이나 스크린샷을 보면 실제와 반대인 설정을 읽게 된다.
+function markCustom() {
+  const sel = document.getElementById('preset');
+  if (sel.value === 'custom') return;
+  sel.value = 'custom';
+  document.getElementById('preset-note').textContent = PRESETS.custom.label;
 }
 
 document.getElementById('preset').addEventListener('change',
@@ -1160,6 +1184,8 @@ el.btnReset.addEventListener('click', () => {
   applyPreset('default');
 });
 
+el.watershed.addEventListener('change', markCustom);
+el.polarity.addEventListener('change', markCustom);
 el.btnApply.addEventListener('click', runDetect);
 el.btnSend.addEventListener('click', sendToRobot);
 

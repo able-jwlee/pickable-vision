@@ -20,13 +20,6 @@ def test_detect_via_image_path():
     assert body["height"] == 910
 
 
-def test_detect_via_image_path_tophat_count():
-    resp = client.post(
-        "/detect", json={"image_path": str(FIXTURE), "method": "tophat"}
-    )
-    assert resp.json()["count"] > 100
-
-
 def test_detect_missing_file_returns_400():
     resp = client.post("/detect", json={"image_path": "no/such/file.jpg"})
     assert resp.status_code == 400

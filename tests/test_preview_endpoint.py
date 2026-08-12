@@ -21,7 +21,7 @@ def _synthetic_b64() -> str:
 
 def test_preview_returns_valid_png():
     resp = client.post(
-        "/detect/preview", json={"image": _synthetic_b64(), "min_area": 50, "mask_walls": False}
+        "/detect/preview", json={"image": _synthetic_b64(), "mask_walls": False}
     )
     assert resp.status_code == 200
     body = resp.json()
