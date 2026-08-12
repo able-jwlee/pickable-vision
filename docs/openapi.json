@@ -122,6 +122,12 @@
             "description": "피킹 안전 여백 (오퍼레이터용 0~100). 접시·웰 경계에서 이만큼 안쪽만 피킹 대상으로 인정한다. 실제 적용된 px 값은 응답 `applied_params.pick_edge_margin` 에 담긴다.",
             "title": "Edge Margin"
           },
+          "exclude_nested": {
+            "default": false,
+            "description": "`parent_id` 가 붙은 검출을 `colonies` 에서 빼고 `count` 도 줄인다. **기본 끔** — 실측 39장에서 F1 이 0.23 내려간다(제외 대상 30개 중 16개가 정답). 같은 콜로니를 두 번 집는 것을 막고 싶을 때만 켠다. 켜면 남는 검출의 `parent_id` 는 모두 `null` 이고 `id` 는 1부터 다시 매겨진다.",
+            "title": "Exclude Nested",
+            "type": "boolean"
+          },
           "image": {
             "anyOf": [
               {

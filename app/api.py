@@ -110,6 +110,7 @@ def _resolve_params(req: DetectRequest) -> dict:
         "min_fill": req.min_fill,
         "watershed_split": req.watershed_split,
         "split_area_ratio": req.split_area_ratio,
+        "exclude_nested": req.exclude_nested,
         "pick_edge_margin": pick_edge_margin,
         "pick_top_n": req.pick_top_n,
         "pick_radius_min": (config.PICK_RADIUS_MIN if req.pick_radius_min is None
@@ -169,7 +170,7 @@ def _detect_and_score(
         radius_min=resolved["pick_radius_min"],
         radius_max=resolved["pick_radius_max"],
     )
-    return [
+    colonies = [
         Colony(
             id=i + 1,
             x=x,
@@ -183,6 +184,15 @@ def _detect_and_score(
         )
         for i, (x, y, r, c) in enumerate(circles)
     ]
+    if not resolved["exclude_nested"]:
+        return colonies
+    # 걸러낸 대상이 parent_id 를 가진 검출 전부이므로 남는 것은 모두 null 이다
+    # (A ⊃ B ⊃ C 면 B·C 가 함께 빠지고 A 만 남는다). 따라서 id 를 다시 매겨도
+    # parent_id 가 끊어지지 않는다.
+    kept = [c for c in colonies if c.parent_id is None]
+    for n, colony in enumerate(kept, start=1):
+        colony.id = n
+    return kept
 
 
 def _output_name(req: DetectRequest) -> str:

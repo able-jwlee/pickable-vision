@@ -88,3 +88,54 @@ def test_nested_overlap_constant_is_the_measured_choice():
     """
     from app import config
     assert config.BLOB_NESTED_OVERLAP == 0.8
+
+
+@pytest.fixture(scope="module")
+def cut():
+    return _detect(exclude_nested=True)
+
+
+def test_exclude_nested_default_is_off(base):
+    assert base["applied_params"]["exclude_nested"] is False
+
+
+def test_exclude_nested_removes_nested_and_shrinks_count(base, cut):
+    nested = sum(1 for c in base["colonies"] if c["parent_id"] is not None)
+    assert nested > 0, "가드 테스트가 먼저 실패해야 한다"
+    assert cut["count"] == base["count"] - nested
+    assert len(cut["colonies"]) == cut["count"]
+
+
+def test_exclude_nested_leaves_no_dangling_parent_id(cut):
+    """걸러낸 대상이 parent_id 를 가진 검출 전부이므로 남는 것은 모두 null 이다."""
+    for c in cut["colonies"]:
+        assert c["parent_id"] is None
+
+
+def test_exclude_nested_renumbers_ids_from_one(cut):
+    assert [c["id"] for c in cut["colonies"]] == list(
+        range(1, len(cut["colonies"]) + 1))
+
+
+def test_exclude_nested_preserves_scores_of_surviving_colonies(base, cut):
+    """점수는 걸러내기 **전** 전체 집합에서 계산해야 한다.
+
+    고립도(가장 가까운 이웃까지의 거리)가 이웃 수에 의존하므로, 걸러낸 뒤
+    계산하면 같은 콜로니의 score 가 옵션에 따라 달라진다. 그러면 pick_top_n
+    랭킹이 옵션에 따라 흔들린다.
+    """
+    kept = {(round(c["x"], 3), round(c["y"], 3)): c
+            for c in base["colonies"] if c["parent_id"] is None}
+    assert kept, "비교할 검출이 없다"
+    for c in cut["colonies"]:
+        key = (round(c["x"], 3), round(c["y"], 3))
+        assert key in kept, f"({c['x']}, {c['y']}) 가 기본 응답에 없다"
+        assert c["score"] == pytest.approx(kept[key]["score"])
+        assert c["pickable"] == kept[key]["pickable"]
+
+
+def test_exclude_nested_off_is_identical_to_omitting_it(base):
+    """되돌림 경로 — 기본값을 명시해도 생략한 것과 같아야 한다."""
+    explicit = _detect(exclude_nested=False)
+    assert explicit["count"] == base["count"]
+    assert explicit["colonies"] == base["colonies"]
