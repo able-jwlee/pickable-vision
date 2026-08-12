@@ -15,6 +15,7 @@ from app.image_io import (
     read_image_file,
 )
 from app.models import Colony, DetectRequest, DetectResponse, PreviewResponse
+from app.nesting import find_parents
 from app.param_mapping import edge_to_margin_px, sensitivity_to_min_t
 from app.scoring import score_colonies
 from app.well_plate import pick_region
@@ -147,6 +148,9 @@ def _detect_and_score(
         {"x": x, "y": y, "radius": r, "circularity": c}
         for x, y, r, c in circles
     ]
+    # 중첩 판정은 검출 경로 밖에서 한다 — NMS 를 건드리지 않아야 옵션을 끈
+    # 상태에서 기존 결과가 그대로 나온다는 것을 보장할 수 있다.
+    parents = find_parents(geom, config.BLOB_NESTED_OVERLAP)
     # 피킹 대상은 경계에서 안전 여백만큼 안쪽만 인정 (테두리 근처 반점 제외).
     # petri 는 접시 원을, well8 은 4×2 격자를 기준으로 삼는다.
     # mask_walls=False 는 "경계 제한 없음"을 뜻한다.
@@ -174,6 +178,8 @@ def _detect_and_score(
             circularity=c,
             score=scores[i]["score"],
             pickable=scores[i]["pickable"],
+            # find_parents 는 0-기반 인덱스를 주고 id 는 1-기반이다.
+            parent_id=None if parents[i] is None else parents[i] + 1,
         )
         for i, (x, y, r, c) in enumerate(circles)
     ]

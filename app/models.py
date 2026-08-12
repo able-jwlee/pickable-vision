@@ -430,6 +430,16 @@ class Colony(BaseModel):
             "이웃과의 거리·크기 대역·경계 여백을 모두 통과해야 true."
         ),
     )
+    parent_id: int | None = Field(
+        None,
+        description=(
+            "이 검출을 감싸는 더 큰 검출의 `id`. 없으면 `null`. "
+            "면적의 80% 이상이 그 검출 안에 들어갈 때 붙는다. "
+            "**콜로니 내부 구조에 반응한 중복일 수도, 큰 콜로니 옆의 진짜 작은 "
+            "콜로니일 수도 있다** — 실측에서 반반이라 서버는 지우지 않는다. "
+            "지우려면 `exclude_nested` 를 쓴다."
+        ),
+    )
 
 
 class DetectResponse(BaseModel):

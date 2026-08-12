@@ -30,7 +30,8 @@ def test_detect_returns_colonies():
     assert body["count"] >= 3
     first = body["colonies"][0]
     assert set(first) == {
-        "id", "x", "y", "radius", "circularity", "score", "pickable"
+        "id", "x", "y", "radius", "circularity", "score", "pickable",
+        "parent_id",
     }
     assert body["colonies"][0]["id"] == 1
 
