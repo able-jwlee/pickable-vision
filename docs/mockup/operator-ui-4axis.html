@@ -753,17 +753,6 @@
         <div class="axis-body" id="b-color">
           <div class="field">
             <div class="field-top">
-              <span class="name">콜로니 밝기</span>
-            </div>
-            <select id="s-pol">
-              <option value="auto">자동 판정 (권장)</option>
-              <option value="bright">한천보다 밝다</option>
-              <option value="dark">한천보다 어둡다</option>
-              <option value="both">양쪽 모두</option>
-            </select>
-          </div>
-          <div class="field">
-            <div class="field-top">
               <span class="name">색 차이 요구 <span class="unit">|내부−주변| 채도</span></span>
               <span class="val" id="v-sat">1.5</span>
             </div>
@@ -772,10 +761,18 @@
           </div>
           <p class="axis-note" id="chroma-state"></p>
           <p class="axis-note">
-            <b>색 보너스(colour_credit)는 일부러 뺐다.</b> 색이 뚜렷하면 감도 요구치를
-            깎아주는 옵션인데, 현재 설정에서 재보니 네 그룹 전부에서 나빠졌다 —
-            2배에서 정밀도 82.2% → 59.8%. 예전 측정에서는 흐린 접시가 살아났지만,
-            그 이득은 지금 후보 생성(union)이 이미 가져갔다.
+            <b>두 파라미터를 일부러 뺐다.</b>
+            <br />
+            <b>콜로니 밝기(polarity)</b> — 콜로니가 한천보다 밝은지 어두운지.
+            자동 판정이 실측 39장에서 100% 정확하고, 틀리면 검출이 붕괴하는데
+            (실측 98개 → 3개) 오퍼레이터가 원인을 밝기 극성으로 연결할 방법이 없다.
+            마진이 애매하면 자동으로 양극성 검출로 되돌아가므로 스스로를 보호한다.
+            API 에는 개발자·지원용 비상구로 남아 있다.
+            <br />
+            <b>색 보너스(colour_credit)</b> — 색이 뚜렷하면 감도 요구치를 깎아주는
+            옵션인데, 현재 설정에서 재보니 네 그룹 전부에서 나빠졌다: 정밀도를
+            22%p 깎고 재현율은 3.5%p 만 얻는다. 예전 측정에서는 흐린 접시가
+            살아났지만 그 이득은 지금 후보 생성(union)이 이미 가져갔다.
           </p>
         </div>
       </div>
@@ -872,11 +869,6 @@
           <tr>
             <td>모양 · 오목함 배제</td><td><code>min_solidity</code></td>
             <td>float 0–1</td><td>0.75</td><td class="need">재검출</td>
-          </tr>
-          <tr>
-            <td>색상 · 콜로니 밝기</td><td><code>polarity</code></td>
-            <td>"auto" | "bright" | "dark" | "both"</td>
-            <td>"auto"</td><td class="need">재검출</td>
           </tr>
           <tr>
             <td>색상 · 색 차이 요구</td><td><code>min_rel_sat</code></td>
@@ -1064,12 +1056,6 @@ value === 6
     });
   });
 
-  document.getElementById("s-pol").addEventListener("change", function () {
-    p.pol = this.value;
-    markStale();
-    render();
-  });
-
   document.getElementById("s-nested").addEventListener("change", function () {
     p.nested = this.checked;
     render();
@@ -1102,7 +1088,6 @@ value === 6
     Object.keys(RANGES).forEach(function (id) {
       document.getElementById(id).value = p[RANGES[id]];
     });
-    document.getElementById("s-pol").value = p.pol;
     document.getElementById("s-nested").checked = p.nested;
   }
 
@@ -1170,7 +1155,7 @@ value === 6
       ["max_diam_frac", (p.dmax / 100).toFixed(3), p.dmax !== DEFAULTS.dmax],
       ["min_roundness", p.round.toFixed(2), p.round !== DEFAULTS.round],
       ["min_solidity", p.solid.toFixed(2), p.solid !== DEFAULTS.solid],
-      ["polarity", '"' + p.pol + '"', p.pol !== DEFAULTS.pol],
+      ["polarity", '"auto"  ← 자동 판정 (UI 에 노출하지 않음)', False],
       ["min_rel_sat", p.sat.toFixed(2), p.sat !== DEFAULTS.sat],
       ["colour_credit", "1.00  ← 끔 (실측상 전 그룹에서 손해)", false],
       ["split_area_ratio", SEP_STEPS[p.sep].v || "—", p.sep !== DEFAULTS.sep],
@@ -1248,7 +1233,7 @@ value === 6
     var dirty = {
       size: p.dmin !== DEFAULTS.dmin || p.dmax !== DEFAULTS.dmax,
       shape: p.round !== DEFAULTS.round || p.solid !== DEFAULTS.solid,
-      color: p.pol !== DEFAULTS.pol || p.sat !== DEFAULTS.sat,
+      color: p.sat !== DEFAULTS.sat,
       sep: p.sep !== DEFAULTS.sep || p.nested !== DEFAULTS.nested
     };
     document.getElementById("sum-size").textContent =
@@ -1256,8 +1241,7 @@ value === 6
     document.getElementById("sum-shape").textContent =
       dirty.shape ? "둥글기 " + p.round.toFixed(2) : "기본";
     document.getElementById("sum-color").textContent =
-      dirty.color ? "색차 " + p.sat.toFixed(1) +
-        (p.pol !== DEFAULTS.pol ? " · " + p.pol : "") : "기본";
+      dirty.color ? "색차 " + p.sat.toFixed(1) : "기본";
     document.getElementById("sum-sep").textContent = SEP_STEPS[p.sep].label
       .replace(/ \(.*\)/, "") + (p.nested ? " · 중첩 제외" : "");
     Object.keys(dirty).forEach(function (k) {
