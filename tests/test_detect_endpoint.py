@@ -67,7 +67,8 @@ def test_detect_returns_applied_params():
     ap = body["applied_params"]
     # 요청에 없던 값은 서버 default 가 담긴다 (튜닝 재현·이슈 리포트용).
     for key in ("plate_type", "polarity", "min_t", "work_size",
-                "pick_edge_margin", "pick_top_n"):
+                "pick_edge_margin", "pick_top_n",
+                "min_rel_sat", "exclude_nested", "has_chroma"):
         assert key in ap, f"applied_params 에 {key} 누락"
 
 

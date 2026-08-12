@@ -27,7 +27,7 @@ def test_colour_credit_stays_off():
 
     2배에서 정밀도 82.20% → 59.82%, F1 78.80 → 68.14.
     그룹별 F1: lower 83.2→67.3, bright 80.7→74.6, dark 83.7→70.0,
-    vague 61.6→52.7. models.py 의 colour_credit 설명에 있는 "vague 26.1→40.9"
-    는 union 도입 이전 수치이며, 그 이득은 이미 후보 생성이 가져갔다.
+    vague 61.6→52.7. "vague 26.1→40.9" 는 union 도입 이전 수치이며, 그
+    이득은 이미 후보 생성이 가져갔다 (경위는 docs/detection_parameters.md 참조).
     """
     assert config.BLOB_COLOUR_CREDIT_MAX == 1.0

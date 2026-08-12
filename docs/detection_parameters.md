@@ -100,7 +100,7 @@
 | `min_roundness` | `0.55` | 면적 ÷ 최소외접원 | **완화 권장 안 함** ↓ |
 | `min_circularity` | `0.0` (끔) | 둘레 기반 4πA/P² | 경계 거칠기에 과민 → 껐다 |
 | `min_fill` | `0.45` | bounding box 채움율 | 0.60으로 올리면 고정밀 구간 +1.4~2.1%p |
-| `watershed_split` | `true` | 붙은 콜로니 분리 | **끄면 나빠지기만 한다** |
+| `watershed_split` | `true` | 붙은 콜로니 분리 | 전역 F1 −0.93 이지만 정밀도 +3.9%p — `lower`·`vague` 그룹은 끄는 쪽이 최고 |
 | `split_area_ratio` | `1.5` | 병합 판정 배수 | 낮출수록 적극 분리 |
 | `colour_credit` | `1.0` (끔) | 색이 뚜렷하면 감도 완화 | **현재 설정에서 전 그룹 손해** ↓ |
 | `min_diam_frac` / `max_diam_frac` | `0.0` (끔) | 크기 창 ÷ 접시 지름 | 실측 분포 1.2~45%, 중앙값 7% |

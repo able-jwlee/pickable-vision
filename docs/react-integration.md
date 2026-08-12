@@ -352,6 +352,9 @@ const topLevel = colonies.filter((c) => c.parent_id === null)
 부모가 오검출이고 자식이 유일한 정답인 경우가 섞여 있다. 자동으로 켜지
 말고 오퍼레이터가 화면을 보고 켜게 할 것.
 
+**`pick_top_n` 과 같이 쓸 때 주의.** `pick_top_n` 은 제외 **전** 전체
+집합에서 상위 N 을 고르므로, 함께 쓰면 `pickable` 이 N 보다 적을 수 있다.
+
 ## 9. 색 축이 적용됐는지 — `has_chroma`
 
 `applied_params.has_chroma` 가 `false` 면 서버가 색 축을 끈 것이다

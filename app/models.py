@@ -135,7 +135,9 @@ class DetectRequest(BaseModel):
             "3.0 → 84.0%/74.7%, 6.0 → 88.2%/69.2%, 12.0 → 93.0%/60.8% "
             "(정밀도/재현율). 생략하면 서버 기본값. "
             "무채색 이미지에서는 서버가 색 축을 끄므로 이 값이 무시된다 — "
-            "응답 `applied_params.has_chroma` 로 확인할 것."
+            "응답 `applied_params.has_chroma` 로 확인할 것. "
+            "0 이면 `colour_credit` 도 함께 무력화된다 — 내부적으로 이 값을 "
+            "분모로 나누기 때문이다."
         ),
     )
     # 처리 해상도(최대변 px). 콜로니당 픽셀 수가 t-통계량을 좌우한다.
@@ -238,7 +240,8 @@ class DetectRequest(BaseModel):
             "**기본 끔** — 실측 39장에서 F1 이 0.23 내려간다(제외 대상 30개 중 "
             "16개가 정답). 같은 콜로니를 두 번 집는 것을 막고 싶을 때만 켠다. "
             "켜면 남는 검출의 `parent_id` 는 모두 `null` 이고 `id` 는 1부터 "
-            "다시 매겨진다."
+            "다시 매겨진다. `pick_top_n` 은 제외 **전** 전체 집합에서 상위 N 을 "
+            "고르므로, 함께 쓰면 `pickable` 이 N 보다 적을 수 있다."
         ),
     )
     # 모양 게이트. 재현율을 더 짜내야 할 때 접시별로 푸는 용도이고, 기본값이
@@ -316,7 +319,7 @@ class DetectRequest(BaseModel):
         description=(
             "피킹 후보 중 `score` 상위 N개만 `pickable=true` 로 남긴다 "
             "(예: 96핀 헤드 → 96). 생략하면 제한 없음. "
-            "`colonies` 배열 자체는 줄지 않는다."
+            "`colonies` 배열 자체는 줄지 않는다(`exclude_nested` 는 줄인다)."
         ),
     )
     # true면 콜로니를 표시한 이미지를 vision/output/ 에 저장 (로컬 확인용)
