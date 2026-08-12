@@ -123,8 +123,12 @@ class DetectRequest(BaseModel):
     # 실측(39장): 0 → 77.5%/76.2%, 1.5 → 82.2%/75.7%(기본), 3.0 → 84.0%/74.7%,
     #   6.0 → 88.2%/69.2%, 12.0 → 93.0%/60.8% (정밀도/재현율)
     # 3.0 이 전역 F1 최고(79.03 대 78.80)지만 기본값 변경은 별건으로 다룬다.
+    # 기본값을 config 에서 직접 실어 openapi 스펙에 `default: 1.5` 가 뜨게 한다.
+    # None 으로 두면 프론트가 생성한 타입에 기본값이 없어 UI 초기값을 손으로
+    # 복제하게 되고, 이 프로젝트는 그 복제 때문에 표시가 서버와 어긋난 적이 있다.
+    # 여전히 nullable 이라 명시적 null 은 서버 기본값으로 해소된다(api.py).
     min_rel_sat: float | None = Field(
-        None,
+        config.BLOB_MIN_REL_SAT,
         ge=0.0,
         le=60.0,
         description=(

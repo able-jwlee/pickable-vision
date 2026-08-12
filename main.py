@@ -5,7 +5,7 @@ from app.api import router
 
 # 스펙 버전. **엔드포인트나 요청/응답 필드를 바꾸면 올릴 것** —
 # 프론트엔드가 docs/openapi.json 을 코드 생성에 쓰므로 버전이 계약의 눈금이다.
-API_VERSION = "1.0.0"
+API_VERSION = "1.0.1"
 
 DESCRIPTION = """\
 배양 플레이트 이미지에서 콜로니를 검출해 **원본 픽셀 좌표**를 반환한다.
