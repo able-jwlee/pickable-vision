@@ -274,7 +274,8 @@ BLOB_COLOUR_CREDIT_MAX = 1.0   # 색 신호가 t 요구치를 낮춰주는 최�
                                #   그룹별 F1 (기본 → 2.0):
                                #     lower 83.2→67.3  bright 80.7→74.6
                                #     dark  83.7→70.0  vague  61.6→52.7
-                               # 아래 옛 주석의 "vague 26.1→40.9" 는
+                               # `models.py` 의 colour_credit 설명에 있는
+                               # "vague 는 F1 26.1→40.9" 는
                                # candidate_source="union" 도입 **이전** 수치다.
                                # 그 이득은 이미 후보 생성이 가져갔고, 지금 이 축은
                                # 정밀도만 깎는다. 그래서 오퍼레이터 UI 에도
