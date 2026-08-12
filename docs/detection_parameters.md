@@ -27,6 +27,37 @@
 
 ---
 
+## 선별 기준 네 축
+
+오퍼레이터가 보는 화면은 이 네 축으로 묶는다. 감도(`sensitivity`)는 축에
+넣지 않고 **마스터 knob** 으로 위에 둔다 — 네 축 전부에 영향을 주고, 매일
+만지는 유일한 값이다.
+
+| 축 | 파라미터 | 등급 | 비고 |
+|---|---|---|---|
+| (마스터) | `sensitivity` | 오퍼레이터 | `min_t` 로 매핑. raw 를 직접 보내지 말 것 |
+| 크기 | `min_diam_frac` · `max_diam_frac` | 접시별 | 접시 지름 대비 비율이라 카메라·해상도 무관 |
+| 모양 | `min_roundness` | 접시별 | 주된 모양 판정 |
+| 모양 | `min_solidity` | 접시별 | 오목한 얼룩·긁힘 배제 |
+| 모양 | `min_circularity` | 전문가 | 기본 0(기각) — 둘레 기반이라 경계 거칠기에 민감 |
+| 모양 | `min_fill` | 전문가 | 계수(CFU) 용도 전용 |
+| 색상 | `polarity` | 접시별 | 자동 판정이 실측 39/39 정확 |
+| 색상 | `min_rel_sat` | 접시별 | 오검출을 걷어내는 가장 강한 레버 |
+| 색상 | `colour_credit` | 전문가 | **현재 설정에서 전 그룹 손해** — 노출하지 않음 |
+| 분리 | `split_area_ratio` | 접시별 | 그룹별 최적이 정반대 |
+| 분리 | `watershed_split` | 접시별 | 분리 슬라이더 맨 끝 "나누지 않음" 으로 흡수 |
+| 분리 | `exclude_nested` | 접시별 | 기본 끔 |
+| (기타) | `work_size` · `candidate_source` · `threshold_levels` · `adaptive_scale` · raw `min_t` | 전문가 | `models.py` 가 "단독 변경 금지" 라고 명시한 축들 |
+| (개발용) | `image_path` · `save_annotated` · `return_image` | 노출 금지 | 운영 UI 에서 제외 |
+
+### 축을 건드리는 순서
+
+실측상 효율이 좋은 순서는 **감도 → 크기 → 분리 → 색상 → 모양** 이다.
+모양 축은 완화보다 감도를 내리는 쪽이 더 많이 맞힌다 — 같은 정밀도 82.8%
+에서 재현율 74.7% 대 72.5%.
+
+---
+
 ## 1. 오퍼레이터 노브 — 항상 노출
 
 | 파라미터 | 기본값 | 범위 | 효과 | UI |
@@ -76,7 +107,7 @@
 | `min_fill` | `0.45` | bounding box 채움율 | 0.60으로 올리면 고정밀 구간 +1.4~2.1%p |
 | `watershed_split` | `true` | 붙은 콜로니 분리 | **끄면 나빠지기만 한다** |
 | `split_area_ratio` | `1.5` | 병합 판정 배수 | 낮출수록 적극 분리 |
-| `colour_credit` | `1.0` (끔) | 색이 뚜렷하면 감도 완화 | 이미지 종류별로 최적이 갈림 ↓ |
+| `colour_credit` | `1.0` (끔) | 색이 뚜렷하면 감도 완화 | **현재 설정에서 전 그룹 손해** ↓ |
 | `min_diam_frac` / `max_diam_frac` | `0.0` (끔) | 크기 창 ÷ 접시 지름 | 실측 분포 1.2~45%, 중앙값 7% |
 | `adaptive_scale` | `false` | 1차 검출로 해상도 재조정 | 비용 2배, F1은 오히려 하락 |
 
@@ -100,8 +131,12 @@
 민감하다. 합집합 후보의 이진화 성분은 둘레가 거칠어서 부당하게 버려졌다.
 끄자 같은 감도에서 재현율 74.4 → 75.7%. 모양 판정은 면적 기반 `min_roundness` 가 맡는다.
 
-**`colour_credit` — 용도에 따라 갈린다.** 2배로 주면 `vague` 그룹은 F1 26.1→40.9로
-살아나지만 `lower-res` 는 77.6→61.6으로 무너진다. 전역 기본값으로 삼을 수 없다.
+**`colour_credit` — 껐다, 재측정 (2026-08-12).** `candidate_source="union"` 도입
+이전에는 2배에서 `vague` 그룹 F1 이 26.1→40.9 로 살아나는 것처럼 보였지만, union
+후보 기준으로 다시 재보니 그 이득은 이미 후보 생성이 가져갔고 지금은 **네 그룹
+전부 나빠진다** — 2.0배에서 전체 정밀도 82.20%→59.82%, 재현율 75.7%→79.2%,
+F1 78.80→68.14 (그룹별 F1: lower 83.2→67.3, bright 80.7→74.6, dark 83.7→70.0,
+vague 61.6→52.7). 오퍼레이터 UI 에 노출하지 않는다.
 
 ### `candidate_source` — 용도별 선택
 
@@ -152,7 +187,8 @@
 - **반지름 보정**: `BLOB_RADIUS_MODE`("max"), `BLOB_RADIUS_SCALE`(1.30)
 - **극성 자동판정**: `BLOB_AUTO_POLARITY`(True), `BLOB_POLARITY_MIN_MARGIN`(0.05)
 - **모양**: `BLOB_MAX_ASPECT`(2.0)
-- **잡음·채도**: `BLOB_NOISE_FLOOR`(0.5), `BLOB_MONO_SAT_STD`(2.0), `BLOB_MIN_REL_SAT`(1.5)
+- **잡음·채도**: `BLOB_NOISE_FLOOR`(0.5), `BLOB_MONO_SAT_STD`(2.0) — `BLOB_MIN_REL_SAT`
+  는 이제 요청 파라미터 `min_rel_sat` 이다. [§선별 기준 네 축](#선별-기준-네-축) 참고
 - **웰 격자**: `WELL_ROWS`(2), `WELL_COLS`(4), `WELL_MARGIN`(40)
 - **피킹 점수**: `PICK_W_ISOLATION`(0.7), `PICK_W_SIZE`(0.3), `PICK_ISOLATION_REF`(50.0)
 - **그리기**: `OUTPUT_DIR`, `DRAW_*`, `DRAW_MARKER_PAD`(1.05)
@@ -197,7 +233,9 @@ MENISCUS_MIN_LEN  MENISCUS_MIN_ASPECT  WATERSHED_MIN_DISTANCE  WATERSHED_SEED_MI
 | `min_solidity` / `min_roundness` / `min_circularity` / `min_fill` | `0.0 ≤ v ≤ 1.0` |
 | `min_diam_frac` / `max_diam_frac` | `0.0 ≤ v ≤ 1.0` |
 | `colour_credit` | `1.0 ≤ v ≤ 8.0` |
+| `min_rel_sat` | `0.0 ≤ v ≤ 60.0` (생략 시 서버 기본값) |
 | `split_area_ratio` | `0.5 ≤ v ≤ 5.0` |
+| `exclude_nested` | `bool`, 제약 없음 (기본 `false`) |
 | (소스) | `image` 또는 `image_path` 중 하나 필수 |
 
 **이 표를 손으로 옮기지 말 것.** `/openapi.json` 에 전부 들어 있고,
@@ -208,5 +246,6 @@ MENISCUS_MIN_LEN  MENISCUS_MIN_ASPECT  WATERSHED_MIN_DISTANCE  WATERSHED_SEED_MI
 ## 8. 관련 문서
 
 - [react-integration.md](react-integration.md) — 프론트엔드 연동
+- [mockup/operator-ui-4axis.html](mockup/operator-ui-4axis.html) — 4축 화면 정적 목업 + 개발자 노트
 - [detection-improvement-2026-07-28.md](detection-improvement-2026-07-28.md) — 실측 이력과 기각한 시도들
 - [app/config.py](../app/config.py) — 상수별 곡선과 기각 사유 (가장 상세)

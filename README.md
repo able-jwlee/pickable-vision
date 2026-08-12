@@ -66,7 +66,7 @@ python -m venv .venv
 }
 ```
 
-전체 파라미터(31개)는 **[docs/openapi.json](docs/openapi.json)** 이 정본이다 —
+전체 파라미터(33개)는 **[docs/openapi.json](docs/openapi.json)** 이 정본이다 —
 범위·기본값·enum·설명이 전부 들어 있고, 서버의 `/openapi.json`·`/docs`(Swagger)와
 같은 내용이다. 필드별 실측 근거는
 [docs/detection_parameters.md](docs/detection_parameters.md)에 있다.

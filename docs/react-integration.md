@@ -2,7 +2,10 @@
 
 > 대상: PICKABLE 오퍼레이터 UI를 React로 만드는 개발자.
 > 서버는 `vision/` (FastAPI, 기본 `http://localhost:7780`).
-> 현재 동작하는 목업은 [operator-ui.html](mockup/operator-ui.html) — 순수 HTML/JS 단일 파일.
+> 실제 API와 통신하는 목업은 [operator-ui.html](mockup/operator-ui.html) — 순수 HTML/JS 단일 파일.
+> 4축 화면 구성(§6·§8~10)의 참고 구현은
+> [operator-ui-4axis.html](mockup/operator-ui-4axis.html) — 정적 목업, "개발자 노트"에
+> 컨트롤 ↔ 필드 매핑이 있다.
 
 ---
 
@@ -143,7 +146,7 @@ components.schemas.DetectRequest.properties.candidate_source
       description: 'union = LoG ∪ 다중레벨 이진화(기본, 재현율 우선)...' }
 ```
 
-범위·기본값·enum·설명이 전부 들어 있다. 31개 필드 모두 설명이 붙어 있으므로
+범위·기본값·enum·설명이 전부 들어 있다. 33개 필드 모두 설명이 붙어 있으므로
 **폼 라벨과 툴팁을 여기서 그대로 뽑아 쓰면 된다.**
 
 ```bash
@@ -254,10 +257,14 @@ const approved = [
 
 ## 6. 파라미터 노출 수준
 
-전체 목록과 실측 근거는 [detection_parameters.md](detection_parameters.md).
-UI 관점 요약:
+전체 목록과 실측 근거는
+[detection_parameters.md § 선별 기준 네 축](detection_parameters.md#선별-기준-네-축)
+— 파라미터를 **크기·모양·색상·분리** 네 축으로 묶고 **오퍼레이터**(항상 보임) ·
+**접시별**(펼쳐서 조절) · **전문가**(UI 에 노출 안 함) 세 등급을 붙인 표가 정본이다.
+아래는 그 UI 관점 요약이고, 실제 화면 구성은 §10, 동작하는 참고 구현은
+[operator-ui-4axis.html](mockup/operator-ui-4axis.html)이다.
 
-**항상 보이게 (오퍼레이터가 실제로 조절)**
+**항상 보이게 (오퍼레이터 노브)**
 
 | 필드 | 컨트롤 | 비고 |
 |---|---|---|
@@ -265,18 +272,29 @@ UI 관점 요약:
 | `polarity` | 선택 | `auto` 가 39장에서 판정 정확도 100% — 기본값 유지 |
 | `plate_type` | 선택 | `petri` / `well8` |
 
-**접어두기 (평소 건드릴 필요 없음)** — `candidate_source`, `min_solidity`,
-`min_roundness`, `work_size`, `watershed_split`, `min_fill`
+**접시별 (펼쳐서 조절, 평소 건드릴 필요 없음)** — 크기 `min_diam_frac` ·
+`max_diam_frac`, 모양 `min_roundness` · `min_solidity`, 색상 `min_rel_sat`,
+분리 `split_area_ratio` · `watershed_split` · `exclude_nested`
 
 기본값이 이미 sample/ 라벨 39장 실측 최적이다. **`min_roundness` 완화는 권하지 않는다** —
 같은 정밀도(82.8%)라면 감도를 내리는 쪽이 더 많이 맞힌다 (74.7% 대 72.5%).
 
-**노출하지 말 것** — `save_annotated`, `image_path`, `return_image`,
-`annotated_image*`, `image_format`, `image_quality`, `marker`. 개발·디버깅용이다.
+**전문가 (UI 에 노출 안 함)** — `min_circularity`(기본 0, 기각), `min_fill`(계수
+전용), `colour_credit`(현재 설정에서 전 그룹 손해 — §9 참고), `work_size`,
+`candidate_source`, `threshold_levels`, `adaptive_scale`, raw `min_t`. 서로
+의존하는 축이라 오퍼레이터가 단독으로 바꾸면 캘리브레이션이 무효가 된다
+([detection_parameters.md §0](detection_parameters.md#0-핵심-요약)).
 
-### 프리셋
+**노출하지 말 것 (개발·디버깅용)** — `save_annotated`, `image_path`, `return_image`,
+`annotated_image*`, `image_format`, `image_quality`, `marker`.
 
-목업에 있는 것을 그대로 쓰면 된다 (감도 값은 실측점에서 역산한 것):
+### 프리셋은 두지 않는다
+
+4축 화면(§10 규칙 5)에서는 프리셋을 두지 않는다 — 축이 넷이면 프리셋과 축
+조작이 중복이라서다. 기준선은 "균형 · 서버 기본값" 한 줄로 고정 표시한다.
+
+아래는 단일 감도 슬라이더만 있던 구형 목업([operator-ui.html](mockup/operator-ui.html))의
+참고용 값이다 (감도 값은 실측점에서 역산한 것). 4축 화면에는 적용하지 말 것:
 
 | 프리셋 | `sensitivity` | 결과 |
 |---|---|---|
@@ -310,9 +328,64 @@ async function detect(params) {
 
 ---
 
-## 8. 관련 문서
+## 8. 중첩 검출 — `parent_id`
+
+`Colony.parent_id` 는 이 검출을 감싸는 더 큰 검출의 `id` 다(없으면 `null`).
+파라미터 없이 항상 계산되므로 별도 요청이 필요 없다.
+
+```ts
+// 중첩 검출을 흐리게 표시하고 개수에서 뺀다
+const nested = colonies.filter((c) => c.parent_id !== null)
+const topLevel = colonies.filter((c) => c.parent_id === null)
+```
+
+서버에서 아예 빼려면 `exclude_nested: true` 를 보낸다. 그러면 `count` 가
+줄고 남는 검출의 `parent_id` 는 모두 `null` 이며 `id` 는 1부터 다시 매겨진다.
+
+**기본값은 꺼짐이다.** 실측에서 제외 대상 30개 중 16개가 정답이었다 —
+큰 콜로니 옆의 진짜 작은 콜로니가 부모 반지름 과대추정으로 삼켜진 경우와,
+부모가 오검출이고 자식이 유일한 정답인 경우가 섞여 있다. 자동으로 켜지
+말고 오퍼레이터가 화면을 보고 켜게 할 것.
+
+## 9. 색 축이 적용됐는지 — `has_chroma`
+
+`applied_params.has_chroma` 가 `false` 면 서버가 색 축을 끈 것이다
+(흑백 카메라·합성 이미지 등 채도가 없는 입력). 그때 `min_rel_sat` 과
+`colour_credit` 은 무동작이므로, **색상 그룹을 잠그고 이유를 표시해야 한다.**
+그러지 않으면 사용자가 슬라이더를 움직여도 결과가 안 바뀌는 이유를 알 수 없다.
+
+```tsx
+<fieldset disabled={!applied.has_chroma}>
+  {!applied.has_chroma && (
+    <p>이 이미지는 채도가 없어 색 기준이 적용되지 않습니다.</p>
+  )}
+  {/* polarity, min_rel_sat 컨트롤 */}
+</fieldset>
+```
+
+## 10. 조절 화면 구성
+
+네 축을 접이식 그룹으로 두고, 각 그룹이 접힌 상태에서도 현재 값 요약을
+보여준다. 다섯 가지 규칙을 지킬 것. 동작하는 참고 구현은
+[operator-ui-4axis.html](mockup/operator-ui-4axis.html)이고, 그 "개발자 노트"에
+컨트롤 ↔ `POST /detect` 필드 매핑이 표로 정리돼 있다.
+
+1. **크기 축에 검출 지름 히스토그램**을 그리고 크기 창을 띠로 겹친다.
+   `colonies` 의 `radius × 2 ÷ 접시 지름` 분포를 그리면 오퍼레이터가 숫자를
+   추측하지 않고 분포를 보고 자를 수 있다.
+2. **파라미터를 바꾸면 화면 결과가 낡는다.** 크기 축과 `exclude_nested` 는
+   클라이언트에서 근사 미리보기가 가능하지만 나머지는 서버 재검출이 필요하다.
+   오버레이를 흐리게 하고 "다시 검출" 을 강조할 것.
+3. **기본값에서 벗어난 축에 표시를 붙이고** 되돌리기를 제공한다.
+4. **`applied_params` 를 화면에 표시한다.** `sensitivity → min_t` 매핑을
+   클라이언트에서 재계산하지 말 것 — 서버가 적용한 값이 그대로 온다.
+5. 프리셋은 두지 않는다. 네 축이 있으면 중복이고, 기준선은
+   "균형 · 서버 기본값" 한 줄로 고정 표시한다.
+
+## 11. 관련 문서
 
 - [README](../README.md) — 서버 실행, 엔드포인트 전체
 - [detection_parameters.md](detection_parameters.md) — 파라미터별 실측 근거
 - [detection-improvement-2026-07-28.md](detection-improvement-2026-07-28.md) — 알고리즘과 성능 이력
-- [operator-ui.html](mockup/operator-ui.html) — 동작하는 목업 (참고 구현)
+- [operator-ui.html](mockup/operator-ui.html) — 실제 API와 통신하는 목업 (참고 구현)
+- [operator-ui-4axis.html](mockup/operator-ui-4axis.html) — 4축 화면 정적 목업 + 개발자 노트
