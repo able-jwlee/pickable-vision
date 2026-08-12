@@ -100,6 +100,8 @@ def _resolve_params(req: DetectRequest) -> dict:
         "min_diam_frac": req.min_diam_frac,
         "max_diam_frac": req.max_diam_frac,
         "colour_credit": req.colour_credit,
+        "min_rel_sat": (config.BLOB_MIN_REL_SAT if req.min_rel_sat is None
+                        else req.min_rel_sat),
         "work_size": req.work_size,
         "adaptive_scale": req.adaptive_scale,
         "min_solidity": req.min_solidity,
@@ -134,6 +136,7 @@ def _detect_and_score(
         min_diam_frac=resolved["min_diam_frac"],
         max_diam_frac=resolved["max_diam_frac"],
         colour_credit=resolved["colour_credit"],
+        min_rel_sat=resolved["min_rel_sat"],
         work_size=resolved["work_size"],
         adaptive_scale=resolved["adaptive_scale"],
         min_solidity=resolved["min_solidity"],
