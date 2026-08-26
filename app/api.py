@@ -113,6 +113,9 @@ def _resolve_params(req: DetectRequest) -> dict:
         "watershed_split": req.watershed_split,
         "split_area_ratio": req.split_area_ratio,
         "exclude_nested": req.exclude_nested,
+        # mask_walls 가 꺼져 있으면 pick_edge_margin 은 무동작이다. 여백만
+        # 돌려주면 UI 는 그것이 적용됐는지 알 수 없으므로 스위치도 함께 싣는다.
+        "mask_walls": req.mask_walls,
         "pick_edge_margin": pick_edge_margin,
         "pick_top_n": req.pick_top_n,
         "pick_radius_min": (config.PICK_RADIUS_MIN if req.pick_radius_min is None
@@ -153,6 +156,9 @@ def _detect_and_score(
     # 무채색 이미지에서는 색 축이 무동작이다. UI 가 색 그룹을 잠그고 이유를
     # 표시할 수 있도록 판정 결과를 그대로 돌려준다.
     resolved["has_chroma"] = stats.get("has_chroma", True)
+    # 크기 창(min/max_diam_frac)의 분모. UI 가 "5% = 몇 px" 을 표시하려면
+    # 서버가 실제로 쓴 기준 길이를 알아야 한다 (petri 접시 지름 / 폴백은 짧은 변).
+    resolved["plate_size_ref"] = stats.get("size_ref", 0.0)
     geom = [
         {"x": x, "y": y, "radius": r, "circularity": c}
         for x, y, r, c in circles
@@ -248,7 +254,9 @@ def detect_colonies(req: DetectRequest) -> DetectResponse:
 
     annotated_path: str | None = None
     if req.save_annotated:
-        annotated = draw_pick_targets(img, colonies, mode=req.annotate)
+        annotated = draw_pick_targets(
+            img, colonies, mode=req.annotate, marker=req.marker
+        )
         saved = save_annotated(annotated, config.OUTPUT_DIR, _output_name(req))
         annotated_path = str(saved.resolve())
 
@@ -300,7 +308,9 @@ def detect_preview(req: DetectRequest) -> PreviewResponse:
     img = _load_image(req)
     resolved = _resolve_params(req)
     colonies = _detect_and_score(img, req, resolved)
-    annotated = draw_pick_targets(img, colonies, mode=req.annotate)
+    annotated = draw_pick_targets(
+        img, colonies, mode=req.annotate, marker=req.marker
+    )
     if req.save_annotated:
         save_annotated(annotated, config.OUTPUT_DIR, _output_name(req))
     return PreviewResponse(count=len(colonies), image=encode_png_base64(annotated))

@@ -5,7 +5,15 @@ from app.api import router
 
 # 스펙 버전. **엔드포인트나 요청/응답 필드를 바꾸면 올릴 것** —
 # 프론트엔드가 docs/openapi.json 을 코드 생성에 쓰므로 버전이 계약의 눈금이다.
-API_VERSION = "1.0.1"
+#
+# 1.1.0 (2026-08-26) 파라미터 전수 점검:
+#   - pick_top_n 에 하한 1 추가 (0·음수가 조용히 오동작하던 것을 422 로)
+#   - applied_params 에 mask_walls · plate_size_ref 추가
+#   - score 계산의 고립도 기준을 원본 픽셀 상수 → 자기 반지름 배수로
+#     (값이 달라진다. 필드 구조는 그대로)
+#   - marker 가 /detect/preview·save_annotated 에도 적용
+#   - Colony.score·pickable 설명을 실제 동작에 맞게 정정
+API_VERSION = "1.1.0"
 
 DESCRIPTION = """\
 배양 플레이트 이미지에서 콜로니를 검출해 **원본 픽셀 좌표**를 반환한다.

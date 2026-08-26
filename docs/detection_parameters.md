@@ -193,7 +193,7 @@ vague 61.6→52.7). 오퍼레이터 UI 에 노출하지 않는다.
 - **잡음·채도**: `BLOB_NOISE_FLOOR`(0.5), `BLOB_MONO_SAT_STD`(2.0) — `BLOB_MIN_REL_SAT`
   는 이제 요청 파라미터 `min_rel_sat` 이다. [§선별 기준 네 축](#선별-기준-네-축) 참고
 - **웰 격자**: `WELL_ROWS`(2), `WELL_COLS`(4), `WELL_MARGIN`(40)
-- **피킹 점수**: `PICK_W_ISOLATION`(0.7), `PICK_W_SIZE`(0.3), `PICK_ISOLATION_REF`(50.0)
+- **피킹 점수**: `PICK_W_ISOLATION`(0.7), `PICK_W_SIZE`(0.3), `PICK_ISOLATION_R_MULT`(6.0 — 이웃거리 ÷ 자기반지름. 옛 `PICK_ISOLATION_REF`(50px)는 해상도 의존이라 고해상도 접시에서 전부 포화했다)
 - **그리기**: `OUTPUT_DIR`, `DRAW_*`, `DRAW_MARKER_PAD`(1.05)
 
 > `DRAW_MARKER_PAD` 는 `BLOB_RADIUS_SCALE` 과 **함께 움직인다.** 한때 1.35(옛 0.71배
@@ -239,6 +239,7 @@ MENISCUS_MIN_LEN  MENISCUS_MIN_ASPECT  WATERSHED_MIN_DISTANCE  WATERSHED_SEED_MI
 | `min_rel_sat` | `0.0 ≤ v ≤ 60.0` (생략 시 서버 기본값) |
 | `split_area_ratio` | `0.5 ≤ v ≤ 5.0` |
 | `exclude_nested` | `bool`, 제약 없음 (기본 `false`) |
+| `pick_top_n` | `≥ 1` (생략 시 제한 없음) |
 | (소스) | `image` 또는 `image_path` 중 하나 필수 |
 
 **이 표를 손으로 옮기지 말 것.** `/openapi.json` 에 전부 들어 있고,

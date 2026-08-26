@@ -28,7 +28,7 @@
           },
           "pickable": {
             "default": false,
-            "description": "로봇이 안전하게 집을 수 있는 후보인지. 이웃과의 거리·크기 대역·경계 여백을 모두 통과해야 true.",
+            "description": "로봇이 안전하게 집을 수 있는 후보인지. 이웃과의 거리·크기 대역·경계 안쪽 여부를 모두 통과해야 true.\n\n**기본값에서 실제로 거르는 것은 경계 하나다.** 이웃 거리 하한과 크기 대역은 서버 기본값이 0(=끔)이라 무동작이므로, `mask_walls=true`(기본)의 접시·웰 경계 마스크만 남는다. 거리·크기로도 거르려면 `pick_radius_min`/`max` 를 명시할 것. `mask_walls=false` 로 두면 **검출 전부가 pickable** 이 된다.",
             "title": "Pickable",
             "type": "boolean"
           },
@@ -39,7 +39,7 @@
           },
           "score": {
             "default": 0.0,
-            "description": "피킹 적합도 0~1 (고립도 0.7 + 크기 적합도 0.3). **랭킹용이지 검출 신뢰도가 아니다.**",
+            "description": "피킹 적합도 0~1. **랭킹용이지 검출 신뢰도가 아니다** — `pick_top_n` 이 이 값으로 정렬한다.\n\n`(고립도 x 0.7 + 크기적합도 x 0.3) x (0.5 + 0.5 x circularity)`\n- 고립도 = `min(이웃거리 / (6 x 자기반지름), 1.0)` — 반지름 배수라 해상도와 무관하다\n- 크기적합도 = `pick_radius_min`/`max` 대역 안이면 1.0. **기본값에서는 대역이 꺼져 있어 항상 1.0**(상수)\n- 원형도 보정이 곱해진다\n\n따라서 기본값에서 순위를 정하는 것은 **고립도와 원형도**다. 크기로 정렬하려면 `pick_radius_min`/`max` 를 켜야 한다.",
             "title": "Score",
             "type": "number"
           },
@@ -180,7 +180,7 @@
           },
           "marker": {
             "default": "square",
-            "description": "`return_image` 마커 모양. 콜로니가 원형이라 원을 그리면 윤곽선과 겹쳐 구분이 어렵다 — 직선 테두리가 한천 텍스처 위에서 훨씬 잘 보인다.",
+            "description": "서버가 그리는 모든 표시 이미지(`return_image` · `/detect/preview` · `save_annotated`)의 마커 모양. 콜로니가 원형이라 원을 그리면 윤곽선과 겹쳐 구분이 어렵다 — 직선 테두리가 한천 텍스처 위에서 훨씬 잘 보인다.",
             "enum": [
               "square",
               "circle"
@@ -196,7 +196,7 @@
           },
           "max_diam_frac": {
             "default": 0.0,
-            "description": "콜로니 크기 상한 — 콜로니 지름 ÷ 접시 지름. 0 = 제한 없음(기본).",
+            "description": "콜로니 크기 상한 — 콜로니 지름 ÷ **기준 길이**(`min_diam_frac` 와 같은 분모, `applied_params.plate_size_ref`). 0 = 제한 없음(기본). **켤 때 주의** — 실측 콜로니 지름이 기준 길이의 1.2~45% 로 매우 넓어 어떤 상한도 진짜 큰 콜로니를 버린다. 상한이 막으려는 대상(뭉친 덩어리·접시 테두리)은 이미 `watershed_split` 과 접시 반지름 수축이 담당하므로 오퍼레이터 UI 에는 하한만 노출하는 것을 권한다.",
             "maximum": 1.0,
             "minimum": 0.0,
             "title": "Max Diam Frac",
@@ -212,7 +212,7 @@
           },
           "min_diam_frac": {
             "default": 0.0,
-            "description": "콜로니 크기 하한 — 콜로니 지름 ÷ 접시 지름. 0 = 제한 없음(기본). 비율이라 해상도·카메라와 무관하다. 실측 분포 1.2~45%, 중앙값 7%.",
+            "description": "콜로니 크기 하한 — 콜로니 지름 ÷ **기준 길이**. 0 = 제한 없음(기본). 비율이라 해상도·카메라와 무관하다. 실측 분포 1.2~45%, 중앙값 7%. 기준 길이는 `plate_type=\"petri\"` 에서 접시 지름이지만, `well8` 이거나 접시 검출이 실패하면 **이미지 짧은 변**으로 폴백한다 — 서버가 실제로 쓴 값이 응답 `applied_params.plate_size_ref`(원본 px) 에 담기므로 \"5% = 몇 px\" 은 그것으로 계산할 것.",
             "maximum": 1.0,
             "minimum": 0.0,
             "title": "Min Diam Frac",
@@ -300,13 +300,14 @@
           "pick_top_n": {
             "anyOf": [
               {
+                "minimum": 1.0,
                 "type": "integer"
               },
               {
                 "type": "null"
               }
             ],
-            "description": "피킹 후보 중 `score` 상위 N개만 `pickable=true` 로 남긴다 (예: 96핀 헤드 → 96). 생략하면 제한 없음. `colonies` 배열 자체는 줄지 않는다(`exclude_nested` 는 줄인다).",
+            "description": "피킹 후보 중 `score` 상위 N개만 `pickable=true` 로 남긴다 (예: 96핀 헤드 → 96). 생략하면 제한 없음. 1 이상. `colonies` 배열 자체는 줄지 않는다(`exclude_nested` 는 줄인다). 랭킹 기준인 `score` 는 **고립도와 원형도**로 결정된다 — `Colony.score` 설명 참조.",
             "title": "Pick Top N"
           },
           "plate_type": {
@@ -533,7 +534,7 @@
   "info": {
     "description": "배양 플레이트 이미지에서 콜로니를 검출해 **원본 픽셀 좌표**를 반환한다.\n\n### 프론트엔드가 쓰는 두 엔드포인트\n\n| | |\n|---|---|\n| `GET /image?path=` | 배경으로 깔 원본 이미지 (브라우저가 캐시한다) |\n| `POST /detect` | 좌표 JSON — 4000px 이미지에서 약 3.9KB |\n\n좌표는 **처리 해상도와 무관하게 항상 원본 픽셀 기준**이므로\n`<svg viewBox=\"0 0 {width} {height}\">` 에 그대로 얹으면 좌표 변환이 필요 없다.\n\n`return_image: true` 로 서버가 그린 이미지를 받을 수도 있지만 응답이 260KB 로\n67배 커지고 확대하면 마커가 뭉개진다 — 웹 UI 에서는 쓰지 말 것.\n\n### 감도\n\n오퍼레이터가 실제로 조절하는 값은 `sensitivity`(0~100) 하나다. 나머지 기본값은\n`sample/` 라벨 39장(정답 1,886개) 실측 최적이다.\n\n| sensitivity | min_t | 정밀도 | 재현율 |\n|---|---|---|---|\n| 43 | 30 | 89.0% | 70.9% |\n| 46 | 25 | 86.7% | 73.3% |\n| **50 (기본)** | **20** | **82.2%** | **75.7%** |\n| 81 | 15 | 73.5% | 77.3% |\n\n**매핑식을 클라이언트에 복제하지 말 것.** 실제 적용된 값이 응답의\n`applied_params` 로 되돌아온다 — 복제 때문에 UI 표시가 서버와 어긋난 적이 네 번 있다.\n\n### 알아둘 것\n\n- 정밀도 82% · 재현율 76% 다. **검출 5~6개 중 1개는 빈 한천**이고 **4개 중 1개는\n  놓친다.** 로봇에 보내기 전 사람이 확인하는 단계를 두는 것을 전제로 한 값이다.\n- `image_path` 는 서버와 파일시스템을 공유할 때만 동작하는 **개발용**이다.\n  운영에서는 `image`(base64)를 쓴다.\n- 검출은 4000px 이미지에서 약 2초 걸린다. 감도 슬라이더는 디바운스할 것.\n",
     "title": "PICKABLE Vision Server",
-    "version": "1.0.1"
+    "version": "1.1.0"
   },
   "openapi": "3.1.0",
   "paths": {

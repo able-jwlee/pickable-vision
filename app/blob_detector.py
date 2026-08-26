@@ -886,6 +886,11 @@ def detect_blobs(
         # 무채색이면 색 게이트와 색 할인이 모두 무동작이 된다. 호출자가 그것을
         # 모르면 색 슬라이더를 움직여도 결과가 안 바뀌는 이유를 알 수 없다.
         stats["has_chroma"] = bool(has_chroma)
+        # min/max_diam_frac 의 분모. petri 는 접시 지름이지만 well8 이거나
+        # 접시 검출이 실패하면 이미지 짧은 변으로 조용히 폴백한다 — 같은 비율이
+        # 다른 물리 크기를 뜻하게 되므로 호출자가 알아야 한다. 여기서 원본
+        # 픽셀로 되돌려 담는다(size_ref 는 작업 픽셀 단위다).
+        stats["size_ref"] = float(size_ref / s) if s > 0 else float(size_ref)
 
     kept: list[tuple[float, float, float, float]] = []
     # 극성. None = 양극성 모두 검출 후 병합(기본). True/False 로 고정하면

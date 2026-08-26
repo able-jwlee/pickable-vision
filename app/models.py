@@ -93,15 +93,26 @@ class DetectRequest(BaseModel):
         ge=0.0,
         le=1.0,
         description=(
-            "콜로니 크기 하한 — 콜로니 지름 ÷ 접시 지름. 0 = 제한 없음(기본). "
-            "비율이라 해상도·카메라와 무관하다. 실측 분포 1.2~45%, 중앙값 7%."
+            "콜로니 크기 하한 — 콜로니 지름 ÷ **기준 길이**. 0 = 제한 없음(기본). "
+            "비율이라 해상도·카메라와 무관하다. 실측 분포 1.2~45%, 중앙값 7%. "
+            "기준 길이는 `plate_type=\"petri\"` 에서 접시 지름이지만, `well8` 이거나 "
+            "접시 검출이 실패하면 **이미지 짧은 변**으로 폴백한다 — 서버가 실제로 쓴 "
+            "값이 응답 `applied_params.plate_size_ref`(원본 px) 에 담기므로 "
+            "\"5% = 몇 px\" 은 그것으로 계산할 것."
         ),
     )
     max_diam_frac: float = Field(
         config.BLOB_MAX_DIAM_FRAC,
         ge=0.0,
         le=1.0,
-        description="콜로니 크기 상한 — 콜로니 지름 ÷ 접시 지름. 0 = 제한 없음(기본).",
+        description=(
+            "콜로니 크기 상한 — 콜로니 지름 ÷ **기준 길이**(`min_diam_frac` 와 같은 "
+            "분모, `applied_params.plate_size_ref`). 0 = 제한 없음(기본). "
+            "**켤 때 주의** — 실측 콜로니 지름이 기준 길이의 1.2~45% 로 매우 넓어 "
+            "어떤 상한도 진짜 큰 콜로니를 버린다. 상한이 막으려는 대상(뭉친 덩어리·"
+            "접시 테두리)은 이미 `watershed_split` 과 접시 반지름 수축이 담당하므로 "
+            "오퍼레이터 UI 에는 하한만 노출하는 것을 권한다."
+        ),
     )
     # 색이 뚜렷하면 감도 요구치를 이 배율까지 깎아준다. 1.0 = 끔(기본값, 유지 권장).
     # 재측정(2026-08-12, candidate_source="union" 기준): 켜면 네 그룹 전부
@@ -318,12 +329,18 @@ class DetectRequest(BaseModel):
         ),
     )
     # 주어지면 피킹 후보(pickable) 중 점수 상위 N개만 후보로 남김 (예: 96핀 → 96)
+    # ge=1 이 없으면 0/음수가 조용히 통과한다. scoring 은 `ranked[:top_n]` 으로
+    # 자르므로 -3 은 "상위 3개"가 아니라 **하위 3개를 뺀 전부**가 되고, 0 은
+    # pickable 을 전멸시킨다. 둘 다 오퍼레이터가 알아챌 수 없는 오동작이다.
     pick_top_n: int | None = Field(
         None,
+        ge=1,
         description=(
             "피킹 후보 중 `score` 상위 N개만 `pickable=true` 로 남긴다 "
-            "(예: 96핀 헤드 → 96). 생략하면 제한 없음. "
-            "`colonies` 배열 자체는 줄지 않는다(`exclude_nested` 는 줄인다)."
+            "(예: 96핀 헤드 → 96). 생략하면 제한 없음. 1 이상. "
+            "`colonies` 배열 자체는 줄지 않는다(`exclude_nested` 는 줄인다). "
+            "랭킹 기준인 `score` 는 **고립도와 원형도**로 결정된다 — "
+            "`Colony.score` 설명 참조."
         ),
     )
     # true면 콜로니를 표시한 이미지를 vision/output/ 에 저장 (로컬 확인용)
@@ -367,8 +384,9 @@ class DetectRequest(BaseModel):
     marker: Literal["square", "circle"] = Field(
         "square",
         description=(
-            "`return_image` 마커 모양. 콜로니가 원형이라 원을 그리면 윤곽선과 겹쳐 "
-            "구분이 어렵다 — 직선 테두리가 한천 텍스처 위에서 훨씬 잘 보인다."
+            "서버가 그리는 모든 표시 이미지(`return_image` · `/detect/preview` · "
+            "`save_annotated`)의 마커 모양. 콜로니가 원형이라 원을 그리면 윤곽선과 "
+            "겹쳐 구분이 어렵다 — 직선 테두리가 한천 텍스처 위에서 훨씬 잘 보인다."
         ),
     )
     # 응답 이미지 최대 폭(px). 0이면 원본 크기. 좌표는 항상 원본 픽셀 기준이며,
@@ -460,15 +478,28 @@ class Colony(BaseModel):
     score: float = Field(
         0.0,
         description=(
-            "피킹 적합도 0~1 (고립도 0.7 + 크기 적합도 0.3). "
-            "**랭킹용이지 검출 신뢰도가 아니다.**"
+            "피킹 적합도 0~1. **랭킹용이지 검출 신뢰도가 아니다** — "
+            "`pick_top_n` 이 이 값으로 정렬한다.\n\n"
+            "`(고립도 x 0.7 + 크기적합도 x 0.3) x (0.5 + 0.5 x circularity)`\n"
+            f"- 고립도 = `min(이웃거리 / ({config.PICK_ISOLATION_R_MULT:g} x "
+            "자기반지름), 1.0)` — 반지름 배수라 해상도와 무관하다\n"
+            "- 크기적합도 = `pick_radius_min`/`max` 대역 안이면 1.0. "
+            "**기본값에서는 대역이 꺼져 있어 항상 1.0**(상수)\n"
+            "- 원형도 보정이 곱해진다\n\n"
+            "따라서 기본값에서 순위를 정하는 것은 **고립도와 원형도**다. "
+            "크기로 정렬하려면 `pick_radius_min`/`max` 를 켜야 한다."
         ),
     )
     pickable: bool = Field(
         False,
         description=(
-            "로봇이 안전하게 집을 수 있는 후보인지. "
-            "이웃과의 거리·크기 대역·경계 여백을 모두 통과해야 true."
+            "로봇이 안전하게 집을 수 있는 후보인지. 이웃과의 거리·크기 대역·"
+            "경계 안쪽 여부를 모두 통과해야 true.\n\n"
+            "**기본값에서 실제로 거르는 것은 경계 하나다.** 이웃 거리 하한과 "
+            "크기 대역은 서버 기본값이 0(=끔)이라 무동작이므로, "
+            "`mask_walls=true`(기본)의 접시·웰 경계 마스크만 남는다. "
+            "거리·크기로도 거르려면 `pick_radius_min`/`max` 를 명시할 것. "
+            "`mask_walls=false` 로 두면 **검출 전부가 pickable** 이 된다."
         ),
     )
     parent_id: int | None = Field(
