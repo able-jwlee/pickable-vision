@@ -378,6 +378,8 @@
             "anyOf": [
               {
                 "items": {
+                  "maximum": 255.0,
+                  "minimum": 0.0,
                   "type": "integer"
                 },
                 "maxItems": 3,

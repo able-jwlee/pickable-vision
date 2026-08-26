@@ -67,3 +67,19 @@ def test_pick_top_n_rejects_zero_and_negative():
 
 def test_pick_top_n_accepts_positive():
     assert DetectRequest(image="x", pick_top_n=96).pick_top_n == 96
+
+
+def test_target_color_rejects_out_of_range_channels():
+    """0~255 밖 값은 numpy 가 조용히 감아버린다 (300 → 44).
+
+    스펙에 항목 범위가 없으면 UI 가 생성한 타입도 그것을 막지 못하므로,
+    잘못된 색으로 검출이 돌아간 것을 아무도 모른다.
+    """
+    for bad in ([300, 0, 0], [-5, 0, 0], [0, 0, 256]):
+        with pytest.raises(ValidationError):
+            DetectRequest(image="x", target_color=bad)
+
+
+def test_target_color_accepts_full_range():
+    for ok in ([0, 0, 0], [255, 255, 255], [214, 198, 120]):
+        assert DetectRequest(image="x", target_color=ok).target_color == ok

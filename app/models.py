@@ -1,4 +1,4 @@
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -289,7 +289,7 @@ class DetectRequest(BaseModel):
     # 오퍼레이터가 화면에서 찍은 콜로니 색 (R, G, B). color_boost 와 함께 켠다.
     # 색을 gray 의 대체가 아니라 max 로 더하므로, 잘못 찍어도 최악이 기본 동작과
     # 같다 — polarity 를 UI 에 노출하지 않는 이유(틀리면 붕괴)가 여기엔 없다.
-    target_color: list[int] | None = Field(
+    target_color: list[Annotated[int, Field(ge=0, le=255)]] | None = Field(
         None,
         min_length=3,
         max_length=3,
