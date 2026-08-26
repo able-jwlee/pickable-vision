@@ -18,7 +18,16 @@ from app.api import router
 #   - target_color · color_boost 추가. 오퍼레이터가 화면에서 찍은 색에 가까운
 #     콜로니를 **더 잘 찾는다**(검출 후 거르는 게 아니라 검출 자체를 돕는다).
 #     기본 꺼짐이라 기존 동작은 그대로다.
-API_VERSION = "1.2.0"
+#
+# 1.3.0 (2026-08-26) 색으로 거르기:
+#   - Colony 에 color(내부 중앙 RGB) · color_distance(목표색까지 Lab a*b* 거리).
+#     target_color 없이도 color 는 항상 온다 — 프론트가 직접 필터를 만들 수 있다.
+#   - max_color_distance 추가(기본 20). **target_color 를 준 요청에만 적용된다.**
+#     색을 찍으면 거르기까지 기본 동작이다 — 3초 기다려 재검출했는데 결과가
+#     그대로면 오퍼레이터는 고장난 줄 안다. colonies 에서 빼지 않고 pickable 만
+#     내리므로 화면이 "왜 빠졌는지" 를 보여줄 수 있다.
+#   - color_boost 를 target_color 없이 켜면 422. 조용한 무동작을 없앤다.
+API_VERSION = "1.3.0"
 
 DESCRIPTION = """\
 배양 플레이트 이미지에서 콜로니를 검출해 **원본 픽셀 좌표**를 반환한다.

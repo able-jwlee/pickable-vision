@@ -31,7 +31,7 @@ def test_detect_returns_colonies():
     first = body["colonies"][0]
     assert set(first) == {
         "id", "x", "y", "radius", "circularity", "score", "pickable",
-        "parent_id",
+        "parent_id", "color", "color_distance",
     }
     assert body["colonies"][0]["id"] == 1
 

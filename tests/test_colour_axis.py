@@ -16,6 +16,17 @@ from main import app
 
 client = TestClient(app)
 
+def _b64() -> str:
+    """합성 접시 — 회색 콜로니 3개. 자홍과 멀다."""
+    import base64
+    img = np.full((300, 300, 3), 200, dtype=np.uint8)
+    for cx, cy in [(60, 60), (150, 150), (240, 240)]:
+        cv2.circle(img, (cx, cy), 12, (60, 60, 60), -1)
+    ok, buf = cv2.imencode(".png", img)
+    assert ok
+    return base64.b64encode(buf).decode()
+
+
 SAMPLES = sorted(glob.glob("sample/lower-resolution/*.jpg"))
 pytestmark = pytest.mark.skipif(
     not SAMPLES, reason="sample/ 이미지가 없으면 건너뜀 (저장소에 커밋되지 않음)"
@@ -113,3 +124,72 @@ def test_color_boost_never_loses_detections():
         got = detect_blobs(img, plate_type="petri",
                            target_color=colour, color_boost=0.6)
         assert len(got) >= len(base), f"{colour} 에서 검출이 줄었다"
+
+
+# --- 색 선별 (max_color_distance) + Colony 색 정보 ---
+
+def test_colour_axis_without_target_is_rejected():
+    """색을 안 주고 노브만 켜면 조용히 무동작이 된다 — 422 로 끊는다.
+
+    UI 가 자홍을 지정했는데 갈색 콜로니가 그대로 나오는 것을 보고 기능이 고장난
+    줄 알았던 원인이 이것이다. 아무 일도 안 일어나는 것과 고장난 것을 화면에서
+    구별할 수 없으므로 조용히 넘기지 않는다.
+    """
+    r = client.post("/detect", json={"image": _b64(), "color_boost": 0.6})
+    assert r.status_code == 422
+
+
+def test_colony_carries_colour_without_any_target():
+    """target_color 를 안 줘도 색은 항상 온다 — 프론트가 직접 필터를 만들 수 있다."""
+    body = client.post("/detect", json={"image": _b64(),
+                                        "mask_walls": False}).json()
+    assert body["count"] > 0
+    for c in body["colonies"]:
+        assert c["color"] is not None and len(c["color"]) == 3
+        assert c["color_distance"] is None      # 목표색이 없으면 거리도 없다
+
+
+def test_wrong_colour_greys_everything_out_but_keeps_coordinates():
+    """색을 잘못 찍으면 **피킹만 0 이 되고 colonies 는 그대로다.**
+
+    빼버리면 화면이 "왜 빠졌는지" 를 보여줄 수 없어 오퍼레이터가 색을 잘못
+    찍은 것을 알아채지 못한다.
+    """
+    plain = client.post("/detect", json={"image": _b64(),
+                                         "mask_walls": False}).json()
+    # 합성 접시는 회색 콜로니다. 자홍을 찍으면 전부 멀다.
+    magenta = client.post("/detect", json={
+        "image": _b64(), "mask_walls": False,
+        "target_color": [216, 19, 98], "color_boost": 0.6,
+    }).json()
+    assert magenta["count"] >= plain["count"]        # 검출은 줄지 않는다
+    assert sum(c["pickable"] for c in magenta["colonies"]) == 0
+    assert all(c["color_distance"] > 20 for c in magenta["colonies"])
+
+
+def test_colour_distance_is_reproducible_from_reported_colour():
+    """프론트가 color 로 같은 거리를 다시 계산할 수 있어야 한다.
+
+    그 재현 가능성이 없으면 화면이 임계값을 설명할 수 없다.
+    """
+    target = [200, 200, 200]
+    body = client.post("/detect", json={
+        "image": _b64(), "mask_walls": False,
+        "target_color": target, "max_color_distance": 200,
+    }).json()
+    tl = cv2.cvtColor(np.uint8([[target[::-1]]]), cv2.COLOR_BGR2LAB)[0, 0]
+    for c in body["colonies"]:
+        cl = cv2.cvtColor(np.uint8([[c["color"][::-1]]]), cv2.COLOR_BGR2LAB)[0, 0]
+        mine = float(np.hypot(float(cl[1]) - float(tl[1]),
+                              float(cl[2]) - float(tl[2])))
+        assert abs(mine - c["color_distance"]) < 0.05
+
+
+def test_colour_filter_applies_before_pick_top_n():
+    """색으로 거른 뒤 상위 N 개 — 반대면 96핀을 요청해도 96 개보다 적게 남는다."""
+    body = client.post("/detect", json={
+        "image": _b64(), "mask_walls": False,
+        "target_color": [216, 19, 98], "pick_top_n": 3,
+    }).json()
+    # 전부 색에서 탈락하므로 top_n 이 채워질 수 없다
+    assert sum(c["pickable"] for c in body["colonies"]) == 0

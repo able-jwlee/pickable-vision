@@ -304,12 +304,44 @@ class DetectRequest(BaseModel):
             "고르면 그 문제가 없다."
         ),
     )
+    # 색 선별. **colonies 에서 빼지 않고 pickable 만 내린다** — 화면이 "왜 빠졌는지"
+    # 를 보여줄 수 있어야 오퍼레이터가 색을 잘못 찍은 것을 알아챈다. exclude_nested
+    # 를 기본 끔으로 둔 이유와 같다(제외 대상의 절반이 정답이었다).
+    max_color_distance: float | None = Field(
+        config.BLOB_MAX_COLOR_DISTANCE,
+        ge=0.0,
+        le=200.0,
+        description=(
+            "색 선별 — `target_color` 까지의 Lab a\\*b\\* 거리가 이 값을 넘는 검출은 "
+            "`pickable=false` 가 된다. **기본 20.**\n\n"
+            "**`target_color` 를 준 요청에만 적용된다** — 색을 안 주면 이 값은 "
+            "아무 일도 하지 않는다. 즉 색을 찍지 않는 한 기존 동작 그대로다.\n\n"
+            "**색을 찍으면 거르기까지 기본 동작이다.** 3초 기다려 재검출했는데 "
+            "결과가 그대로면 오퍼레이터는 기능이 고장난 줄 안다 — 무언가 "
+            "달라져야 답이 된다. 찾기만 하고 거르지 않으려면 **200** 을 준다.\n\n"
+            "**`colonies` 에서 빠지지는 않는다.** 걸러진 것도 좌표와 "
+            "`color_distance` 를 그대로 받으므로 화면에서 회색으로 보여줄 수 있다 — "
+            "그래야 색을 잘못 찍었을 때 오퍼레이터가 알아챈다.\n\n"
+            "**`pick_top_n` 보다 먼저 적용된다.** 색으로 거른 뒤 상위 N 개를 "
+            "고르므로 96핀을 요청하면 색 조건을 만족하는 96개가 나온다.\n\n"
+            "눈금 감각 — 라벨 1,875개 실측: 대표 콜로니를 찍었을 때 **같은 접시 "
+            "나머지까지 중앙 2.0 · p99 16.5** 이고, 상한 20 이면 99.7% 가 통과한다. "
+            "다른 색 무리는 30~65 이고 갈색→자홍이 80.6 이다. "
+            "값을 감으로 정하지 말고 응답의 `color_distance` 분포를 히스토그램으로 "
+            "그려 자르게 할 것 — 크기 축과 같은 방식이다.\n\n"
+            "찾기를 돕는 `color_boost` 와 **반대 방향이고 함께 쓸 수 있다** "
+            "(색으로 더 찾고 + 색으로 거르기)."
+        ),
+    )
     color_boost: float = Field(
         config.BLOB_COLOR_BOOST,
         ge=0.0,
         le=1.0,
         description=(
             "찍은 색 축의 가중치. **0 = 끔(기본).** 권장값 0.5~0.6.\n\n"
+            "**이것은 필터가 아니다.** 그 색 콜로니를 *더 찾아줄* 뿐, 다른 색을 "
+            "빼지 않는다 — 자홍을 찍어도 갈색 콜로니는 그대로 나온다. "
+            "거르려면 `max_color_distance` 를 쓸 것.\n\n"
             "켜면 `t = max(t_밝기, boost × t_색)` 이라 **기본 동작보다 나빠질 수 "
             "없다** — 색을 잘못 찍어도 최악이 지금과 같다.\n\n"
             "실측(목표색을 제대로 찍은 경우, 정밀도/재현율/F1):\n"
@@ -491,6 +523,22 @@ class DetectRequest(BaseModel):
     }
 
     @model_validator(mode="after")
+    def _colour_axis_needs_a_target(self) -> "DetectRequest":
+        """색 노브를 켰는데 목표색이 없으면 **조용히 무동작**이 된다.
+
+        이번에 UI 가 자홍을 지정하고 갈색 콜로니가 그대로 나오는 것을 보고 기능이
+        고장난 줄 알았던 원인이 정확히 이것이다. 아무 일도 일어나지 않는 것과
+        고장난 것을 화면에서 구별할 수 없으므로, 조용히 넘기지 않고 422 로 끊는다.
+        """
+        if self.target_color is None:
+            if self.color_boost > 0:
+                raise ValueError(
+                    "color_boost 를 쓰려면 target_color 가 있어야 합니다 "
+                    "(색을 안 주면 아무 일도 일어나지 않습니다)"
+                )
+        return self
+
+    @model_validator(mode="after")
     def _require_one_source(self) -> "DetectRequest":
         if not self.image and not self.image_path:
             raise ValueError(
@@ -535,6 +583,26 @@ class Colony(BaseModel):
             "`mask_walls=true`(기본)의 접시·웰 경계 마스크만 남는다. "
             "거리·크기로도 거르려면 `pick_radius_min`/`max` 를 명시할 것. "
             "`mask_walls=false` 로 두면 **검출 전부가 pickable** 이 된다."
+        ),
+    )
+    color: list[int] | None = Field(
+        None,
+        description=(
+            "콜로니 내부의 중앙 색 `[R, G, B]` (원본 해상도, 반지름 0.6배 안쪽). "
+            "`target_color` 없이도 항상 온다 — 프론트가 이 값으로 스와치를 그리거나 "
+            "직접 색 필터를 만들 수 있다."
+        ),
+    )
+    color_distance: float | None = Field(
+        None,
+        description=(
+            "`target_color` 까지의 Lab a\\*b\\* 거리. `target_color` 를 안 보내면 "
+            "`null`.\n\n"
+            "위 `color` 를 그대로 변환해서 잰 값이라 **프론트가 같은 숫자를 재현할 수 "
+            "있다** — \"왜 이게 빠졌는지\" 를 화면에서 설명하려면 그 재현 가능성이 "
+            "필요하다.\n\n"
+            "`max_color_distance` 를 켰다면 이 값이 그것을 넘는 검출이 "
+            "`pickable=false` 인 것들이다."
         ),
     )
     parent_id: int | None = Field(

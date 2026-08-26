@@ -33,6 +33,7 @@ def score_colonies(
     radius_max: float | None = None,
     min_separation: float | None = None,
     min_circularity: float | None = None,
+    excluded: set[int] | None = None,
 ) -> list[dict]:
     """각 콜로니에 pickability 점수와 pickable 여부를 매긴다.
 
@@ -61,6 +62,9 @@ def score_colonies(
         radius_min/max  핀 기하에 맞는 크기 대역
         min_circularity 단일 원형 콜로니인지
     - pick_mask(2D uint8)가 주어지면 중심이 mask 밖(=0)인 것은 pickable에서 제외.
+    - excluded 에 든 인덱스는 pickable 에서 뺀다. **top_n 보다 먼저** 적용되므로
+      색으로 거른 뒤 상위 N 개를 고르는 순서가 된다 — 반대로 하면 96핀을 요청해도
+      색 필터가 그 뒤를 깎아 96 개보다 적게 남는다(exclude_nested 와 같은 함정).
     - top_n이 주어지면 pickable 중 점수 상위 top_n개만 pickable로 남긴다.
     - 모든 기준은 인자로 요청별 덮어쓰기가 가능하다. 단위가 원본 이미지 픽셀이라
       해상도에 의존하므로, 다시 켤 때는 접시 지름 대비 비율로 환산해 넘겨야 한다.
@@ -97,6 +101,8 @@ def score_colonies(
             and (hi <= 0 or r <= hi)
         )
         if pickable and min_circ > 0 and q is not None and q < min_circ:
+            pickable = False
+        if pickable and excluded is not None and i in excluded:
             pickable = False
         if pickable and pick_mask is not None:
             yi = int(min(max(c["y"], 0), pick_mask.shape[0] - 1))
