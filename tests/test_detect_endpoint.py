@@ -177,3 +177,22 @@ def test_applied_params_reports_plate_size_reference():
     # 걸치는 원을 맞출 수 있어서(이 합성 300x300 에서 338 이 나온다). 그래서
     # UI 는 이 값을 그대로 표시하지 말고 크기 창 환산에만 쓸 것.
     assert applied["plate_size_ref"] <= 300 * 2
+
+
+def test_applied_params_reports_colour_axis():
+    """UI 가 찍은 색을 화면에 다시 보여줄 수 있어야 한다."""
+    resp = client.post("/detect", json={
+        "image": _synthetic_b64(), "mask_walls": False,
+        "target_color": [214, 198, 120], "color_boost": 0.5,
+    })
+    assert resp.status_code == 200
+    applied = resp.json()["applied_params"]
+    assert applied["target_color"] == [214, 198, 120]
+    assert applied["color_boost"] == 0.5
+
+
+def test_target_color_rejects_wrong_length():
+    for bad in ([1, 2], [1, 2, 3, 4]):
+        r = client.post("/detect", json={"image": _synthetic_b64(),
+                                         "target_color": bad})
+        assert r.status_code == 422

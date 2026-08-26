@@ -13,7 +13,12 @@ from app.api import router
 #     (값이 달라진다. 필드 구조는 그대로)
 #   - marker 가 /detect/preview·save_annotated 에도 적용
 #   - Colony.score·pickable 설명을 실제 동작에 맞게 정정
-API_VERSION = "1.1.0"
+#
+# 1.2.0 (2026-08-26) 색으로 검출 돕기:
+#   - target_color · color_boost 추가. 오퍼레이터가 화면에서 찍은 색에 가까운
+#     콜로니를 **더 잘 찾는다**(검출 후 거르는 게 아니라 검출 자체를 돕는다).
+#     기본 꺼짐이라 기존 동작은 그대로다.
+API_VERSION = "1.2.0"
 
 DESCRIPTION = """\
 배양 플레이트 이미지에서 콜로니를 검출해 **원본 픽셀 좌표**를 반환한다.

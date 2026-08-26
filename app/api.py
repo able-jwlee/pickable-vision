@@ -104,6 +104,8 @@ def _resolve_params(req: DetectRequest) -> dict:
                         else req.min_rel_sat),
         "work_size": req.work_size,
         "adaptive_scale": req.adaptive_scale,
+        "target_color": req.target_color,
+        "color_boost": req.color_boost,
         "min_solidity": req.min_solidity,
         "min_roundness": req.min_roundness,
         "candidate_source": req.candidate_source,
@@ -143,6 +145,9 @@ def _detect_and_score(
         min_rel_sat=resolved["min_rel_sat"],
         work_size=resolved["work_size"],
         adaptive_scale=resolved["adaptive_scale"],
+        target_color=(tuple(resolved["target_color"])
+                      if resolved["target_color"] else None),
+        color_boost=resolved["color_boost"],
         min_solidity=resolved["min_solidity"],
         min_roundness=resolved["min_roundness"],
         watershed_split=resolved["watershed_split"],

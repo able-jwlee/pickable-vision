@@ -400,8 +400,15 @@ def colony_gate(
     inner_frac: float = 0.65,
     outer_lo: float = 1.4,
     outer_hi: float = 2.1,
+    match: np.ndarray | None = None,
+    color_boost: float = 0.0,
 ) -> list[tuple[float, float, float, float]]:
-    """콜로니처럼 생긴 후보만 (x, y, radius, circularity)로 반환."""
+    """콜로니처럼 생긴 후보만 (x, y, radius, circularity)로 반환.
+
+    match 는 '오퍼레이터가 찍은 색에 가까울수록 밝은' 맵이다. 주어지면 그 맵에서도
+    t 를 재서 gray 쪽과 **max 로 합친다** — 대체하지 않으므로 색을 잘못 찍어도
+    기본 동작보다 나빠지지 않는다.
+    """
     h, w = gray.shape
     f = gray.astype(np.float32)
     binm_kernel = np.ones((3, 3), np.uint8)
@@ -483,6 +490,22 @@ def colony_gate(
         s_out = max(1.4826 * float(np.median(np.abs(vo - mo))), floor)
         se = math.sqrt(s_in * s_in / n_in + s_out * s_out / n_out)
         t_stat = diff / se
+
+        # 찍은 색 축. 목표색에 가까울수록 값이 크게 만든 맵이라 극성은 항상
+        # bright 다. gray 와 독립으로 재서 큰 쪽을 쓴다.
+        if match is not None and color_boost > 0.0:
+            mp = match[y0:y1, x0:x1]
+            vmi, vmo = mp[inner], mp[outer]
+            if vmi.size >= 5 and vmo.size >= 10:
+                mmi = float(np.median(vmi))
+                mmo = float(np.median(vmo))
+                ms_in = max(1.4826 * float(np.median(np.abs(vmi - mmi))), floor)
+                ms_out = max(1.4826 * float(np.median(np.abs(vmo - mmo))), floor)
+                mse = math.sqrt(ms_in * ms_in / n_in + ms_out * ms_out / n_out)
+                t_match = (mmi - mmo) / mse
+                if t_match > 0:
+                    t_stat = max(t_stat, color_boost * t_match)
+
         # 색이 t를 보완할 수 있으므로 t 단독 탈락은 아래 합산 판정에서 처리한다.
         # 단 명백히 반대 극성인 후보는 여기서 끊는다(반대 극성 루프가 잡는다).
         if t_stat <= 0:
@@ -772,6 +795,9 @@ def detect_blobs(
     outer_hi: float = config.BLOB_OUTER_HI,
     force_bright: bool | None = None,
     auto_polarity: bool = config.BLOB_AUTO_POLARITY,
+    # 오퍼레이터가 화면에서 찍은 색 (R, G, B). None 이면 색 축을 쓰지 않는다.
+    target_color: tuple[int, int, int] | None = None,
+    color_boost: float = config.BLOB_COLOR_BOOST,
     work_size: int = config.BLOB_WORK_SIZE,
     # None이면 work_size에 비례해 자동 산출한다 (아래 설명 참조).
     r_min: float | None = None,
@@ -825,6 +851,7 @@ def detect_blobs(
             max_radius=max_radius, min_diam_frac=min_diam_frac,
             max_diam_frac=max_diam_frac, colour_credit=colour_credit,
             force_bright=force_bright,
+            target_color=target_color, color_boost=color_boost,
             work_size=work_size, r_min=r_min,
             r_max=r_max, n_scale=n_scale, log_thresh=log_thresh,
             plate_type=plate_type, stats=stats,
@@ -850,6 +877,8 @@ def detect_blobs(
                         max_diam_frac=max_diam_frac,
                         colour_credit=colour_credit,
                         force_bright=force_bright,
+                        target_color=target_color,
+                        color_boost=color_boost,
                         work_size=int(work_size * k),
                         r_min=r_min * k, r_max=r_max * k,
                         n_scale=n_scale, log_thresh=log_thresh,
@@ -865,6 +894,19 @@ def detect_blobs(
         small = img
     gray = cv2.GaussianBlur(cv2.cvtColor(small, cv2.COLOR_BGR2GRAY), (3, 3), 0)
     sat_full = cv2.cvtColor(small, cv2.COLOR_BGR2HSV)[..., 1].astype(np.float32)
+
+    # 오퍼레이터가 찍은 색 → '그 색에 가까울수록 밝은' 맵.
+    # 밝기(L)를 빼고 색상 평면(a*, b*)에서만 거리를 잰다 — RGB 거리로 재면
+    # 밝기가 지배해서 그늘진 같은 색 콜로니를 놓친다.
+    # gray 와 눈금을 맞추려고 0~255 범위로 편다(log_thresh 가 그 스케일 기준).
+    match = None
+    if target_color is not None and color_boost > 0.0:
+        lab_img = cv2.cvtColor(small, cv2.COLOR_BGR2LAB).astype(np.float32)
+        swatch = np.uint8([[[target_color[2], target_color[1], target_color[0]]]])
+        tl = cv2.cvtColor(swatch, cv2.COLOR_BGR2LAB).astype(np.float32)[0, 0]
+        cdist = np.sqrt((lab_img[..., 1] - tl[1]) ** 2
+                        + (lab_img[..., 2] - tl[2]) ** 2)
+        match = cv2.GaussianBlur(np.clip(64.0 - cdist, 0.0, None) * 4.0, (3, 3), 0)
 
     roi, size_ref = plate_roi_with_scale(gray, plate_type)
 
@@ -943,6 +985,15 @@ def detect_blobs(
                 n_levels=threshold_levels,
                 max_candidates=config.BLOB_MAX_CANDIDATES,
             ))
+        if match is not None:
+            # 색 맵의 콜로니는 항상 밝은 쪽이다. 여기서 후보를 안 뽑으면
+            # gray 에 안 보이는 콜로니는 게이트까지 도달하지 못한다 —
+            # 게이트만 손봐서는 놓친 것을 되찾을 수 없다.
+            cands.append(log_candidates(
+                match, roi, True, r_min=r_min, r_max=r_max, n_scale=n_scale,
+                log_thresh=log_thresh,
+                max_candidates=config.BLOB_MAX_CANDIDATES,
+            ))
         cands = merge_candidates(*cands)
         kept += colony_gate(
             gray, sat, roi, cands, bright,
@@ -957,6 +1008,7 @@ def detect_blobs(
             radius_mode=radius_mode, radius_scale=radius_scale,
             radius_alpha=radius_alpha, inner_frac=inner_frac,
             outer_lo=outer_lo, outer_hi=outer_hi,
+            match=match, color_boost=color_boost,
         )
 
     # 두 극성이 같은 자리를 잡으면 원형도가 높은 쪽만 남긴다.
