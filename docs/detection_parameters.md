@@ -193,7 +193,9 @@ vague 61.6→52.7). 오퍼레이터 UI 에 노출하지 않는다.
 - **반지름 보정**: `BLOB_RADIUS_MODE`("max"), `BLOB_RADIUS_SCALE`(1.30)
 - **극성 자동판정**: `BLOB_AUTO_POLARITY`(True), `BLOB_POLARITY_MIN_MARGIN`(0.05)
 - **모양**: `BLOB_MAX_ASPECT`(2.0)
-- **잡음·채도**: `BLOB_NOISE_FLOOR`(0.5), `BLOB_MONO_SAT_STD`(2.0) — `BLOB_MIN_REL_SAT`
+- **잡음·채도**: `BLOB_NOISE_FLOOR`(0.5 — **t 판정의 필수 방어.** 완전히 균일한
+  영역은 분산이 0 이라 t 가 발산해 구조 없는 곳에 거대 blob 이 잡힌다. 8비트
+  양자화 노이즈 ±0.5 LSB 를 바닥으로 깐다), `BLOB_MONO_SAT_STD`(2.0) — `BLOB_MIN_REL_SAT`
   는 이제 요청 파라미터 `min_rel_sat` 이다. [§선별 기준 네 축](#선별-기준-네-축) 참고
 - **웰 격자**: `WELL_ROWS`(2), `WELL_COLS`(4), `WELL_MARGIN`(40)
 - **피킹 점수**: `PICK_W_ISOLATION`(0.7), `PICK_W_SIZE`(0.3), `PICK_ISOLATION_R_MULT`(6.0 — 이웃거리 ÷ 자기반지름. 옛 `PICK_ISOLATION_REF`(50px)는 해상도 의존이라 고해상도 접시에서 전부 포화했다)
