@@ -1,4 +1,4 @@
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -93,15 +93,26 @@ class DetectRequest(BaseModel):
         ge=0.0,
         le=1.0,
         description=(
-            "콜로니 크기 하한 — 콜로니 지름 ÷ 접시 지름. 0 = 제한 없음(기본). "
-            "비율이라 해상도·카메라와 무관하다. 실측 분포 1.2~45%, 중앙값 7%."
+            "콜로니 크기 하한 — 콜로니 지름 ÷ **기준 길이**. 0 = 제한 없음(기본). "
+            "비율이라 해상도·카메라와 무관하다. 실측 분포 1.2~45%, 중앙값 7%. "
+            "기준 길이는 `plate_type=\"petri\"` 에서 접시 지름이지만, `well8` 이거나 "
+            "접시 검출이 실패하면 **이미지 짧은 변**으로 폴백한다 — 서버가 실제로 쓴 "
+            "값이 응답 `applied_params.plate_size_ref`(원본 px) 에 담기므로 "
+            "\"5% = 몇 px\" 은 그것으로 계산할 것."
         ),
     )
     max_diam_frac: float = Field(
         config.BLOB_MAX_DIAM_FRAC,
         ge=0.0,
         le=1.0,
-        description="콜로니 크기 상한 — 콜로니 지름 ÷ 접시 지름. 0 = 제한 없음(기본).",
+        description=(
+            "콜로니 크기 상한 — 콜로니 지름 ÷ **기준 길이**(`min_diam_frac` 와 같은 "
+            "분모, `applied_params.plate_size_ref`). 0 = 제한 없음(기본). "
+            "**켤 때 주의** — 실측 콜로니 지름이 기준 길이의 1.2~45% 로 매우 넓어 "
+            "어떤 상한도 진짜 큰 콜로니를 버린다. 상한이 막으려는 대상(뭉친 덩어리·"
+            "접시 테두리)은 이미 `watershed_split` 과 접시 반지름 수축이 담당하므로 "
+            "오퍼레이터 UI 에는 하한만 노출하는 것을 권한다."
+        ),
     )
     # 색이 뚜렷하면 감도 요구치를 이 배율까지 깎아준다. 1.0 = 끔(기본값, 유지 권장).
     # 재측정(2026-08-12, candidate_source="union" 기준): 켜면 네 그룹 전부
@@ -275,6 +286,73 @@ class DetectRequest(BaseModel):
             "것보다 감도를 내리는 쪽이 더 많이 맞힌다 (74.7% 대 72.5%)."
         ),
     )
+    # 오퍼레이터가 화면에서 찍은 콜로니 색 (R, G, B). color_boost 와 함께 켠다.
+    # 색을 gray 의 대체가 아니라 max 로 더하므로, 잘못 찍어도 최악이 기본 동작과
+    # 같다 — polarity 를 UI 에 노출하지 않는 이유(틀리면 붕괴)가 여기엔 없다.
+    target_color: list[Annotated[int, Field(ge=0, le=255)]] | None = Field(
+        None,
+        min_length=3,
+        max_length=3,
+        description=(
+            "오퍼레이터가 화면에서 찍은 콜로니 색 `[R, G, B]` (각 0~255). "
+            "**이 색에 가까운 콜로니를 더 잘 찾는다** — 검출 후 거르는 게 아니라 "
+            "검출 자체를 돕는다. `color_boost` 가 0 이면 무시된다.\n\n"
+            "밝기를 뺀 색상 평면(Lab a\\*b\\*)에서 거리를 재므로 그늘져서 어두운 "
+            "같은 색 콜로니도 인정한다.\n\n"
+            "**색은 화면에서 찍게 할 것.** 숫자로 입력받으면 촬영마다 조명·"
+            "화이트밸런스가 달라 같은 콜로니가 다른 값으로 찍힌다. 같은 이미지 안에서 "
+            "고르면 그 문제가 없다."
+        ),
+    )
+    # 색 선별. **colonies 에서 빼지 않고 pickable 만 내린다** — 화면이 "왜 빠졌는지"
+    # 를 보여줄 수 있어야 오퍼레이터가 색을 잘못 찍은 것을 알아챈다. exclude_nested
+    # 를 기본 끔으로 둔 이유와 같다(제외 대상의 절반이 정답이었다).
+    max_color_distance: float | None = Field(
+        config.BLOB_MAX_COLOR_DISTANCE,
+        ge=0.0,
+        le=200.0,
+        description=(
+            "색 선별 — `target_color` 까지의 Lab a\\*b\\* 거리가 이 값을 넘는 검출은 "
+            "`pickable=false` 가 된다. **기본 20.**\n\n"
+            "**`target_color` 를 준 요청에만 적용된다** — 색을 안 주면 이 값은 "
+            "아무 일도 하지 않는다. 즉 색을 찍지 않는 한 기존 동작 그대로다.\n\n"
+            "**색을 찍으면 거르기까지 기본 동작이다.** 3초 기다려 재검출했는데 "
+            "결과가 그대로면 오퍼레이터는 기능이 고장난 줄 안다 — 무언가 "
+            "달라져야 답이 된다. 찾기만 하고 거르지 않으려면 **200** 을 준다.\n\n"
+            "**`colonies` 에서 빠지지는 않는다.** 걸러진 것도 좌표와 "
+            "`color_distance` 를 그대로 받으므로 화면에서 회색으로 보여줄 수 있다 — "
+            "그래야 색을 잘못 찍었을 때 오퍼레이터가 알아챈다.\n\n"
+            "**`pick_top_n` 보다 먼저 적용된다.** 색으로 거른 뒤 상위 N 개를 "
+            "고르므로 96핀을 요청하면 색 조건을 만족하는 96개가 나온다.\n\n"
+            "눈금 감각 — 라벨 1,875개 실측: 대표 콜로니를 찍었을 때 **같은 접시 "
+            "나머지까지 중앙 2.0 · p99 16.5** 이고, 상한 20 이면 99.7% 가 통과한다. "
+            "다른 색 무리는 30~65 이고 갈색→자홍이 80.6 이다. "
+            "값을 감으로 정하지 말고 응답의 `color_distance` 분포를 히스토그램으로 "
+            "그려 자르게 할 것 — 크기 축과 같은 방식이다.\n\n"
+            "찾기를 돕는 `color_boost` 와 **반대 방향이고 함께 쓸 수 있다** "
+            "(색으로 더 찾고 + 색으로 거르기)."
+        ),
+    )
+    color_boost: float = Field(
+        config.BLOB_COLOR_BOOST,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "찍은 색 축의 가중치. **0 = 끔(기본).** 권장값 0.5~0.6.\n\n"
+            "**이것은 필터가 아니다.** 그 색 콜로니를 *더 찾아줄* 뿐, 다른 색을 "
+            "빼지 않는다 — 자홍을 찍어도 갈색 콜로니는 그대로 나온다. "
+            "거르려면 `max_color_distance` 를 쓸 것.\n\n"
+            "켜면 `t = max(t_밝기, boost × t_색)` 이라 **기본 동작보다 나빠질 수 "
+            "없다** — 색을 잘못 찍어도 최악이 지금과 같다.\n\n"
+            "실측(목표색을 제대로 찍은 경우, 정밀도/재현율/F1):\n"
+            "가장 못 잡는 `vague` 10장 — 0: 70.2%/54.9%/61.6 → "
+            "**0.6: 70.6%/59.0%/64.3**\n"
+            "대조군 `bright` 4장 — 0: 83.3%/75.6%/79.3 → 0.6: 82.7%/77.9%/80.2\n\n"
+            "**교환이 아니다.** vague 에서 재현율 +4.1%p 를 얻는데 정밀도가 "
+            "+0.4%p 로 같이 오른다. 흐린 접시에서 먼저 켜볼 것."
+        ),
+    )
+
     # true면 1차 검출로 콜로니 크기를 재고 해상도를 자동 조정해 재검출한다
     # (검출 비용 약 2배). 기본 끔 — 실측에서 전체 F1이 오히려 떨어졌다
     # (config.BLOB_ADAPTIVE_SCALE 주석 참조). 해상도는 work_size로 지정할 것.
@@ -318,12 +396,18 @@ class DetectRequest(BaseModel):
         ),
     )
     # 주어지면 피킹 후보(pickable) 중 점수 상위 N개만 후보로 남김 (예: 96핀 → 96)
+    # ge=1 이 없으면 0/음수가 조용히 통과한다. scoring 은 `ranked[:top_n]` 으로
+    # 자르므로 -3 은 "상위 3개"가 아니라 **하위 3개를 뺀 전부**가 되고, 0 은
+    # pickable 을 전멸시킨다. 둘 다 오퍼레이터가 알아챌 수 없는 오동작이다.
     pick_top_n: int | None = Field(
         None,
+        ge=1,
         description=(
             "피킹 후보 중 `score` 상위 N개만 `pickable=true` 로 남긴다 "
-            "(예: 96핀 헤드 → 96). 생략하면 제한 없음. "
-            "`colonies` 배열 자체는 줄지 않는다(`exclude_nested` 는 줄인다)."
+            "(예: 96핀 헤드 → 96). 생략하면 제한 없음. 1 이상. "
+            "`colonies` 배열 자체는 줄지 않는다(`exclude_nested` 는 줄인다). "
+            "랭킹 기준인 `score` 는 **고립도와 원형도**로 결정된다 — "
+            "`Colony.score` 설명 참조."
         ),
     )
     # true면 콜로니를 표시한 이미지를 vision/output/ 에 저장 (로컬 확인용)
@@ -367,8 +451,9 @@ class DetectRequest(BaseModel):
     marker: Literal["square", "circle"] = Field(
         "square",
         description=(
-            "`return_image` 마커 모양. 콜로니가 원형이라 원을 그리면 윤곽선과 겹쳐 "
-            "구분이 어렵다 — 직선 테두리가 한천 텍스처 위에서 훨씬 잘 보인다."
+            "서버가 그리는 모든 표시 이미지(`return_image` · `/detect/preview` · "
+            "`save_annotated`)의 마커 모양. 콜로니가 원형이라 원을 그리면 윤곽선과 "
+            "겹쳐 구분이 어렵다 — 직선 테두리가 한천 텍스처 위에서 훨씬 잘 보인다."
         ),
     )
     # 응답 이미지 최대 폭(px). 0이면 원본 크기. 좌표는 항상 원본 픽셀 기준이며,
@@ -438,6 +523,22 @@ class DetectRequest(BaseModel):
     }
 
     @model_validator(mode="after")
+    def _colour_axis_needs_a_target(self) -> "DetectRequest":
+        """색 노브를 켰는데 목표색이 없으면 **조용히 무동작**이 된다.
+
+        이번에 UI 가 자홍을 지정하고 갈색 콜로니가 그대로 나오는 것을 보고 기능이
+        고장난 줄 알았던 원인이 정확히 이것이다. 아무 일도 일어나지 않는 것과
+        고장난 것을 화면에서 구별할 수 없으므로, 조용히 넘기지 않고 422 로 끊는다.
+        """
+        if self.target_color is None:
+            if self.color_boost > 0:
+                raise ValueError(
+                    "color_boost 를 쓰려면 target_color 가 있어야 합니다 "
+                    "(색을 안 주면 아무 일도 일어나지 않습니다)"
+                )
+        return self
+
+    @model_validator(mode="after")
     def _require_one_source(self) -> "DetectRequest":
         if not self.image and not self.image_path:
             raise ValueError(
@@ -460,15 +561,48 @@ class Colony(BaseModel):
     score: float = Field(
         0.0,
         description=(
-            "피킹 적합도 0~1 (고립도 0.7 + 크기 적합도 0.3). "
-            "**랭킹용이지 검출 신뢰도가 아니다.**"
+            "피킹 적합도 0~1. **랭킹용이지 검출 신뢰도가 아니다** — "
+            "`pick_top_n` 이 이 값으로 정렬한다.\n\n"
+            "`(고립도 x 0.7 + 크기적합도 x 0.3) x (0.5 + 0.5 x circularity)`\n"
+            f"- 고립도 = `min(이웃거리 / ({config.PICK_ISOLATION_R_MULT:g} x "
+            "자기반지름), 1.0)` — 반지름 배수라 해상도와 무관하다\n"
+            "- 크기적합도 = `pick_radius_min`/`max` 대역 안이면 1.0. "
+            "**기본값에서는 대역이 꺼져 있어 항상 1.0**(상수)\n"
+            "- 원형도 보정이 곱해진다\n\n"
+            "따라서 기본값에서 순위를 정하는 것은 **고립도와 원형도**다. "
+            "크기로 정렬하려면 `pick_radius_min`/`max` 를 켜야 한다."
         ),
     )
     pickable: bool = Field(
         False,
         description=(
-            "로봇이 안전하게 집을 수 있는 후보인지. "
-            "이웃과의 거리·크기 대역·경계 여백을 모두 통과해야 true."
+            "로봇이 안전하게 집을 수 있는 후보인지. 이웃과의 거리·크기 대역·"
+            "경계 안쪽 여부를 모두 통과해야 true.\n\n"
+            "**기본값에서 실제로 거르는 것은 경계 하나다.** 이웃 거리 하한과 "
+            "크기 대역은 서버 기본값이 0(=끔)이라 무동작이므로, "
+            "`mask_walls=true`(기본)의 접시·웰 경계 마스크만 남는다. "
+            "거리·크기로도 거르려면 `pick_radius_min`/`max` 를 명시할 것. "
+            "`mask_walls=false` 로 두면 **검출 전부가 pickable** 이 된다."
+        ),
+    )
+    color: list[int] | None = Field(
+        None,
+        description=(
+            "콜로니 내부의 중앙 색 `[R, G, B]` (원본 해상도, 반지름 0.6배 안쪽). "
+            "`target_color` 없이도 항상 온다 — 프론트가 이 값으로 스와치를 그리거나 "
+            "직접 색 필터를 만들 수 있다."
+        ),
+    )
+    color_distance: float | None = Field(
+        None,
+        description=(
+            "`target_color` 까지의 Lab a\\*b\\* 거리. `target_color` 를 안 보내면 "
+            "`null`.\n\n"
+            "위 `color` 를 그대로 변환해서 잰 값이라 **프론트가 같은 숫자를 재현할 수 "
+            "있다** — \"왜 이게 빠졌는지\" 를 화면에서 설명하려면 그 재현 가능성이 "
+            "필요하다.\n\n"
+            "`max_color_distance` 를 켰다면 이 값이 그것을 넘는 검출이 "
+            "`pickable=false` 인 것들이다."
         ),
     )
     parent_id: int | None = Field(

@@ -6,25 +6,50 @@ import numpy as np
 from app import config
 
 
+def _marker(
+    out: np.ndarray,
+    cx: int,
+    cy: int,
+    rad: int,
+    colour: tuple,
+    thickness: int,
+    marker: str,
+) -> None:
+    """마커 하나를 그린다. 모양 규칙을 한 곳에 둔다.
+
+    프리뷰(`/detect/preview`)와 응답 이미지(`return_image`)가 서로 다른 함수로
+    그리면서 `marker` 를 한쪽만 반영한 적이 있다 — 모양 knob 을 눈으로 보려고
+    쓰는 화면에서 정작 모양이 안 바뀌었다. 그래서 규칙을 공유한다.
+    """
+    if marker == "circle":
+        cv2.circle(out, (cx, cy), rad, colour, thickness)
+    else:
+        cv2.rectangle(out, (cx - rad, cy - rad), (cx + rad, cy + rad),
+                      colour, thickness)
+
+
 def draw_colonies(
     img: np.ndarray,
     circles: list[tuple[float, float, float]],
+    marker: str = "square",
 ) -> np.ndarray:
-    """검출된 콜로니를 붉은 원으로 표시한 새 이미지를 반환 (원본 불변)."""
+    """검출된 콜로니를 붉은 마커로 표시한 새 이미지를 반환 (원본 불변)."""
     out = img.copy()
     for x, y, r in circles:
-        cv2.circle(
+        _marker(
             out,
-            (int(x), int(y)),
-            max(int(r), config.MIN_DRAW_RADIUS),
+            int(x),
+            int(y),
+            max(int(r * config.DRAW_MARKER_PAD), config.MIN_DRAW_RADIUS),
             config.DRAW_COLOR,
             config.DRAW_THICKNESS,
+            marker,
         )
     return out
 
 
 def draw_pick_targets(
-    img: np.ndarray, colonies: list, mode: str = "all"
+    img: np.ndarray, colonies: list, mode: str = "all", marker: str = "square"
 ) -> np.ndarray:
     """콜로니를 표시한 새 이미지를 반환 (원본 불변).
 
@@ -39,15 +64,20 @@ def draw_pick_targets(
         out = img.copy()
         for c in colonies:
             if getattr(c, "pickable", False):
-                cv2.circle(
+                _marker(
                     out,
-                    (int(c.x), int(c.y)),
-                    max(int(c.radius), config.MIN_DRAW_RADIUS),
+                    int(c.x),
+                    int(c.y),
+                    max(int(c.radius * config.DRAW_MARKER_PAD),
+                        config.MIN_DRAW_RADIUS),
                     config.DRAW_PICK_COLOR,
                     config.DRAW_THICKNESS + 1,
+                    marker,
                 )
         return out
-    return draw_colonies(img, [(c.x, c.y, c.radius) for c in colonies])
+    return draw_colonies(
+        img, [(c.x, c.y, c.radius) for c in colonies], marker=marker
+    )
 
 
 def draw_for_response(
@@ -91,11 +121,7 @@ def draw_for_response(
         # 콜로니를 가리지 않게 반지름에 여유를 준다. 작은 콜로니는 반지름이
         # 1~2px 이라 그대로 그리면 점이 되므로 최소 크기를 둔다.
         rad = max(int(c.radius * scale * config.DRAW_MARKER_PAD), th * 3)
-        if marker == "circle":
-            cv2.circle(out, (cx, cy), rad, colour, th)
-        else:
-            cv2.rectangle(out, (cx - rad, cy - rad), (cx + rad, cy + rad),
-                          colour, th)
+        _marker(out, cx, cy, rad, colour, th, marker)
     return out, scale
 
 

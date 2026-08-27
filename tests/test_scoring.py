@@ -89,3 +89,42 @@ def test_top_n_limits_pickable():
     cols = [_c(50, 50, 8), _c(300, 50, 8), _c(50, 300, 8), _c(300, 300, 8)]
     res = score_colonies(cols, top_n=2)
     assert sum(1 for r in res if r["pickable"]) == 2
+
+
+def test_isolation_is_resolution_independent():
+    """같은 배치를 10배 해상도로 찍으면 점수가 같아야 한다.
+
+    고립도 기준이 원본 픽셀 상수(옛 PICK_ISOLATION_REF=50)였을 때 이것이
+    깨졌다. 4000px 접시에서는 이웃 거리가 항상 50px 를 넘어 iso 가 전부
+    1.0 으로 포화했고, score 가 사실상 원형도 하나로 결정됐다 —
+    pick_top_n(96핀) 이 고립도를 무시하고 뽑았다는 뜻이다.
+    """
+    small = [_c(100, 100, 5), _c(115, 100, 5), _c(400, 400, 5)]
+    big = [_c(1000, 1000, 50), _c(1150, 1000, 50), _c(4000, 4000, 50)]
+    a = [r["score"] for r in score_colonies(small)]
+    b = [r["score"] for r in score_colonies(big)]
+    assert a == b, f"해상도에 따라 점수가 달라졌다: {a} vs {b}"
+
+
+def test_isolation_still_ranks_on_high_resolution_plate():
+    """4000px 급 좌표에서도 붙은 것과 떨어진 것의 점수가 갈려야 한다."""
+    cols = [_c(2000, 2000, 40), _c(2090, 2000, 40), _c(500, 500, 40)]
+    res = score_colonies(cols)
+    crowded = res[0]["score"]
+    lonely = res[2]["score"]
+    assert lonely > crowded, (
+        f"고립된 콜로니가 붙은 것보다 높아야 한다: {lonely} vs {crowded}"
+    )
+
+
+def test_score_reflects_circularity():
+    """원형도가 score 에 곱해진다 — 스펙에 적어야 하는 항이다."""
+    a = score_colonies([dict(_c(100, 100, 8), circularity=1.0)])[0]["score"]
+    b = score_colonies([dict(_c(100, 100, 8), circularity=0.4)])[0]["score"]
+    assert a > b
+
+
+def test_zero_radius_does_not_crash():
+    """반지름 0 은 고립도 기준의 분모라 방어가 필요하다."""
+    res = score_colonies([_c(10, 10, 0), _c(500, 500, 8)])
+    assert all(0.0 <= r["score"] <= 1.0 for r in res)

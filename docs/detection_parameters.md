@@ -44,6 +44,9 @@
 | 색상 | `polarity` | 전문가 | 자동 판정 100% 정확이지만 **틀리면 검출이 붕괴한다** — 오퍼레이터가 원인을 되짚을 수 없어 노출하지 않음 |
 | 색상 | `min_rel_sat` | 접시별 | 오검출을 걷어내는 가장 강한 레버 |
 | 색상 | `colour_credit` | 전문가 | **현재 설정에서 전 그룹 손해** — 노출하지 않음 |
+| 색상 | `target_color` | 오퍼레이터 | 접시에서 **클릭**해 고른다. 숫자 입력 금지 |
+| 색상 | `color_boost` | 오퍼레이터 | 그 색을 **더 찾는다**(필터 아님). 0=끔, 권장 0.5~0.6 |
+| 색상 | `max_color_distance` | 오퍼레이터 | 그 색에서 먼 것을 `pickable=false`. 기본 20 |
 | 분리 | `split_area_ratio` | 접시별 | 그룹별 최적이 정반대 |
 | 분리 | `watershed_split` | 접시별 | 분리 슬라이더 맨 끝 "나누지 않음" 으로 흡수 |
 | 분리 | `exclude_nested` | 접시별 | 기본 끔 |
@@ -193,7 +196,7 @@ vague 61.6→52.7). 오퍼레이터 UI 에 노출하지 않는다.
 - **잡음·채도**: `BLOB_NOISE_FLOOR`(0.5), `BLOB_MONO_SAT_STD`(2.0) — `BLOB_MIN_REL_SAT`
   는 이제 요청 파라미터 `min_rel_sat` 이다. [§선별 기준 네 축](#선별-기준-네-축) 참고
 - **웰 격자**: `WELL_ROWS`(2), `WELL_COLS`(4), `WELL_MARGIN`(40)
-- **피킹 점수**: `PICK_W_ISOLATION`(0.7), `PICK_W_SIZE`(0.3), `PICK_ISOLATION_REF`(50.0)
+- **피킹 점수**: `PICK_W_ISOLATION`(0.7), `PICK_W_SIZE`(0.3), `PICK_ISOLATION_R_MULT`(6.0 — 이웃거리 ÷ 자기반지름. 옛 `PICK_ISOLATION_REF`(50px)는 해상도 의존이라 고해상도 접시에서 전부 포화했다)
 - **그리기**: `OUTPUT_DIR`, `DRAW_*`, `DRAW_MARKER_PAD`(1.05)
 
 > `DRAW_MARKER_PAD` 는 `BLOB_RADIUS_SCALE` 과 **함께 움직인다.** 한때 1.35(옛 0.71배
@@ -237,8 +240,12 @@ MENISCUS_MIN_LEN  MENISCUS_MIN_ASPECT  WATERSHED_MIN_DISTANCE  WATERSHED_SEED_MI
 | `min_diam_frac` / `max_diam_frac` | `0.0 ≤ v ≤ 1.0` |
 | `colour_credit` | `1.0 ≤ v ≤ 8.0` |
 | `min_rel_sat` | `0.0 ≤ v ≤ 60.0` (생략 시 서버 기본값) |
+| `target_color` | 길이 3, 각 `0 ≤ v ≤ 255` (생략 시 색 축 전체 무동작) |
+| `color_boost` | `0.0 ≤ v ≤ 1.0`. **`target_color` 없이 0 초과면 422** |
+| `max_color_distance` | `0.0 ≤ v ≤ 200.0` (기본 20, `target_color` 있을 때만 적용) |
 | `split_area_ratio` | `0.5 ≤ v ≤ 5.0` |
 | `exclude_nested` | `bool`, 제약 없음 (기본 `false`) |
+| `pick_top_n` | `≥ 1` (생략 시 제한 없음) |
 | (소스) | `image` 또는 `image_path` 중 하나 필수 |
 
 **이 표를 손으로 옮기지 말 것.** `/openapi.json` 에 전부 들어 있고,

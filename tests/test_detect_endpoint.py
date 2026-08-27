@@ -31,7 +31,7 @@ def test_detect_returns_colonies():
     first = body["colonies"][0]
     assert set(first) == {
         "id", "x", "y", "radius", "circularity", "score", "pickable",
-        "parent_id",
+        "parent_id", "color", "color_distance",
     }
     assert body["colonies"][0]["id"] == 1
 
@@ -144,3 +144,55 @@ def test_edge_margin_direction_larger_margin_reduces_pickable():
     assert pickable(100) <= pickable(0), (
         "larger edge margin should not increase pickable count"
     )
+
+
+def test_applied_params_reports_pick_mask_switch():
+    """`pick_edge_margin` 만 돌려주면 여백이 적용됐는지 알 수 없다.
+
+    경계 여백은 `mask_walls` 가 꺼져 있으면 무동작이다. UI 가
+    applied_params 만 보고 화면에 표시하므로 스위치도 함께 실려야 한다.
+    """
+    for mask_walls in (True, False):
+        resp = client.post(
+            "/detect", json={"image": _synthetic_b64(), "mask_walls": mask_walls}
+        )
+        applied = resp.json()["applied_params"]
+        assert applied["mask_walls"] is mask_walls
+        assert "pick_edge_margin" in applied
+
+
+def test_applied_params_reports_plate_size_reference():
+    """크기 창(`min/max_diam_frac`)의 분모를 돌려준다.
+
+    비율의 기준 길이는 petri 접시면 접시 지름이지만, well8 이거나 접시
+    검출이 실패하면 이미지 짧은 변으로 조용히 폴백한다. UI 가 "5% = 몇 px"
+    을 표시하려면 서버가 쓴 기준 길이를 알아야 한다.
+    """
+    resp = client.post(
+        "/detect", json={"image": _synthetic_b64(), "mask_walls": False}
+    )
+    applied = resp.json()["applied_params"]
+    assert applied["plate_size_ref"] > 0
+    # 원본 픽셀 기준이다. 프레임보다 클 수 있다 — HoughCircles 가 이미지 밖으로
+    # 걸치는 원을 맞출 수 있어서(이 합성 300x300 에서 338 이 나온다). 그래서
+    # UI 는 이 값을 그대로 표시하지 말고 크기 창 환산에만 쓸 것.
+    assert applied["plate_size_ref"] <= 300 * 2
+
+
+def test_applied_params_reports_colour_axis():
+    """UI 가 찍은 색을 화면에 다시 보여줄 수 있어야 한다."""
+    resp = client.post("/detect", json={
+        "image": _synthetic_b64(), "mask_walls": False,
+        "target_color": [214, 198, 120], "color_boost": 0.5,
+    })
+    assert resp.status_code == 200
+    applied = resp.json()["applied_params"]
+    assert applied["target_color"] == [214, 198, 120]
+    assert applied["color_boost"] == 0.5
+
+
+def test_target_color_rejects_wrong_length():
+    for bad in ([1, 2], [1, 2, 3, 4]):
+        r = client.post("/detect", json={"image": _synthetic_b64(),
+                                         "target_color": bad})
+        assert r.status_code == 422

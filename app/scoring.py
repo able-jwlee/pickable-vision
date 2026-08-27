@@ -33,6 +33,7 @@ def score_colonies(
     radius_max: float | None = None,
     min_separation: float | None = None,
     min_circularity: float | None = None,
+    excluded: set[int] | None = None,
 ) -> list[dict]:
     """각 콜로니에 pickability 점수와 pickable 여부를 매긴다.
 
@@ -45,13 +46,25 @@ def score_colonies(
     게이트가 이미 더 엄격해서 0개 탈락이었다. 자세한 배경은 config 주석 참조.
 
     - score = (고립도 * w_iso + 크기적합도 * w_size) * 원형도보정(0.5~1.0)
+        고립도   = min(이웃거리 / (PICK_ISOLATION_R_MULT * 자기반지름), 1.0)
+                   → 반지름 배수라 해상도·카메라와 무관하다
+        크기적합도 = 선호 대역([radius_min, radius_max]) 안이면 1.0.
+                   **기본값에서는 대역이 꺼져 있어 항상 1.0** = 상수 기여
+        원형도보정 = 0.5 + 0.5 * circularity
       → 필터를 껐어도 **랭킹은 유지된다**. pick_top_n(예: 96핀)으로 상한을 둘 때
       고립되고 둥근 콜로니가 먼저 선택된다.
+
+      기본값에서 실제로 값을 움직이는 항은 **고립도와 원형도 둘**이다. 크기
+      대역을 켜지 않으면 w_size 항은 상수다 — 스펙의 "고립도 0.7 + 크기 적합도
+      0.3" 만 읽고 크기가 랭킹에 영향한다고 오해하지 말 것.
     - pickable = 아래 기준을 모두 통과. 각 기준은 0이면 적용하지 않는다.
         min_separation  이웃 중심과의 최소 거리 (붙은 콜로니 = 혼합 클론 방지)
         radius_min/max  핀 기하에 맞는 크기 대역
         min_circularity 단일 원형 콜로니인지
     - pick_mask(2D uint8)가 주어지면 중심이 mask 밖(=0)인 것은 pickable에서 제외.
+    - excluded 에 든 인덱스는 pickable 에서 뺀다. **top_n 보다 먼저** 적용되므로
+      색으로 거른 뒤 상위 N 개를 고르는 순서가 된다 — 반대로 하면 96핀을 요청해도
+      색 필터가 그 뒤를 깎아 96 개보다 적게 남는다(exclude_nested 와 같은 함정).
     - top_n이 주어지면 pickable 중 점수 상위 top_n개만 pickable로 남긴다.
     - 모든 기준은 인자로 요청별 덮어쓰기가 가능하다. 단위가 원본 이미지 픽셀이라
       해상도에 의존하므로, 다시 켤 때는 접시 지름 대비 비율로 환산해 넘겨야 한다.
@@ -71,7 +84,12 @@ def score_colonies(
         r = c["radius"]
         q = c.get("circularity")  # None이면 원형도 기준을 적용하지 않음(하위호환)
         nn = _nearest_neighbor_dist(pts, i)
-        iso = 1.0 if nn == math.inf else min(nn / config.PICK_ISOLATION_REF, 1.0)
+        # 고립도 기준을 **자기 반지름 배수**로 잡는다. 원본 픽셀 상수를 쓰면
+        # 해상도에 의존해서, 고해상도 접시에서 전부 1.0 으로 포화한다
+        # (config.PICK_ISOLATION_R_MULT 주석의 실측 참조).
+        iso_ref = config.PICK_ISOLATION_R_MULT * r
+        iso = (1.0 if nn == math.inf or iso_ref <= 0.0
+               else min(nn / iso_ref, 1.0))
         size = _size_score(r, lo, hi)
         base = config.PICK_W_ISOLATION * iso + config.PICK_W_SIZE * size
         round_factor = 0.5 + 0.5 * (q if q is not None else 1.0)
@@ -83,6 +101,8 @@ def score_colonies(
             and (hi <= 0 or r <= hi)
         )
         if pickable and min_circ > 0 and q is not None and q < min_circ:
+            pickable = False
+        if pickable and excluded is not None and i in excluded:
             pickable = False
         if pickable and pick_mask is not None:
             yi = int(min(max(c["y"], 0), pick_mask.shape[0] - 1))

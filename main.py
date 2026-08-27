@@ -5,7 +5,29 @@ from app.api import router
 
 # 스펙 버전. **엔드포인트나 요청/응답 필드를 바꾸면 올릴 것** —
 # 프론트엔드가 docs/openapi.json 을 코드 생성에 쓰므로 버전이 계약의 눈금이다.
-API_VERSION = "1.0.1"
+#
+# 1.1.0 (2026-08-26) 파라미터 전수 점검:
+#   - pick_top_n 에 하한 1 추가 (0·음수가 조용히 오동작하던 것을 422 로)
+#   - applied_params 에 mask_walls · plate_size_ref 추가
+#   - score 계산의 고립도 기준을 원본 픽셀 상수 → 자기 반지름 배수로
+#     (값이 달라진다. 필드 구조는 그대로)
+#   - marker 가 /detect/preview·save_annotated 에도 적용
+#   - Colony.score·pickable 설명을 실제 동작에 맞게 정정
+#
+# 1.2.0 (2026-08-26) 색으로 검출 돕기:
+#   - target_color · color_boost 추가. 오퍼레이터가 화면에서 찍은 색에 가까운
+#     콜로니를 **더 잘 찾는다**(검출 후 거르는 게 아니라 검출 자체를 돕는다).
+#     기본 꺼짐이라 기존 동작은 그대로다.
+#
+# 1.3.0 (2026-08-26) 색으로 거르기:
+#   - Colony 에 color(내부 중앙 RGB) · color_distance(목표색까지 Lab a*b* 거리).
+#     target_color 없이도 color 는 항상 온다 — 프론트가 직접 필터를 만들 수 있다.
+#   - max_color_distance 추가(기본 20). **target_color 를 준 요청에만 적용된다.**
+#     색을 찍으면 거르기까지 기본 동작이다 — 3초 기다려 재검출했는데 결과가
+#     그대로면 오퍼레이터는 고장난 줄 안다. colonies 에서 빼지 않고 pickable 만
+#     내리므로 화면이 "왜 빠졌는지" 를 보여줄 수 있다.
+#   - color_boost 를 target_color 없이 켜면 422. 조용한 무동작을 없앤다.
+API_VERSION = "1.3.0"
 
 DESCRIPTION = """\
 배양 플레이트 이미지에서 콜로니를 검출해 **원본 픽셀 좌표**를 반환한다.
