@@ -87,14 +87,17 @@ def test_finds_colonies_much_larger_than_legacy_kernel():
     """
     circles = detect_blobs(_dish(radius=90))  # 지름 180px ≫ 31px
     assert len(circles) == 3
-    for _x, _y, r, _c in circles:
+    for _x, _y, r, _c, _f in circles:
         assert r > 31 / 2, f"반지름 {r}이 레거시 커널 절반보다 작음"
 
 
 def test_returns_x_y_radius_circularity_tuples():
-    for x, y, r, circ in detect_blobs(_dish()):
+    for x, y, r, circ, r_gate in detect_blobs(_dish()):
         assert r > 0
         assert 0.0 <= circ <= 1.0
+        # 마지막 칸은 크기 게이트가 비교한 반지름이다. 표시용 반지름에는
+        # radius_mode·radius_scale 보정이 붙으므로 게이트 값보다 크거나 같다.
+        assert 0 < r_gate <= r
 
 
 def test_uniform_plate_yields_no_colonies():
@@ -166,7 +169,7 @@ def test_colonies_outside_dish_not_detected():
     img = _dish()
     cv2.circle(img, (60, 60), 30, (200, 200, 200), -1)  # 접시 밖 밝은 점
     circles = detect_blobs(img)
-    for x, y, _r, _c in circles:
+    for x, y, _r, _c, _f in circles:
         assert (x - 400) ** 2 + (y - 400) ** 2 < (800 * 0.45) ** 2
 
 
@@ -204,7 +207,8 @@ def test_detect_blobs_reports_has_chroma_without_changing_return():
     assert isinstance(out, list)
     assert out, "이 합성 접시에서는 최소 1개가 검출돼야 한다"
     for item in out:
-        assert len(item) == 4, "반환은 (x, y, radius, circularity) 4-튜플이어야 한다"
+        assert len(item) == 5, (
+            "반환은 (x, y, radius, circularity, r_gate) 5-튜플이어야 한다")
     assert stats["has_chroma"] is False
 
 

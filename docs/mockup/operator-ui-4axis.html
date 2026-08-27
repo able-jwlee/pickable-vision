@@ -678,7 +678,7 @@
             <span class="val" id="v-sens">50</span>
           </div>
           <input type="range" id="s-sens" min="40" max="85" step="1" value="50" />
-          <div class="trade"><span>놓침 적게</span><span>오검출 적게</span></div>
+          <div class="trade"><span>오검출 적게</span><span>놓침 적게</span></div>
           <p class="axis-note">
             <b>40~85 로 좁혀 두었다.</b> 실측점이 있는 구간은 43~81 뿐이고, 매핑이
             비대칭이라 50 아래는 한 칸이 <code>min_t</code> 1.4 씩, 위는 0.16 씩
@@ -887,6 +887,20 @@
             <td class="need">재검출</td>
           </tr>
           <tr>
+            <td>색상 · 기준색</td><td><code>target_color</code></td>
+            <td>int[3] <span class="hint">(각 0–255)</span></td>
+            <td>없음</td><td class="need">재검출</td>
+          </tr>
+          <tr>
+            <td>색상 · 그 색을 더 찾기</td><td><code>color_boost</code></td>
+            <td>float 0–1</td><td>0 = 끔</td><td class="need">재검출</td>
+          </tr>
+          <tr>
+            <td>색상 · 그 색만 남기기</td><td><code>max_color_distance</code></td>
+            <td>float 0–200</td><td>20</td>
+            <td class="live">즉시 미리보기 + 재검출</td>
+          </tr>
+          <tr>
             <td>분리 · 검출 안의 검출 제외</td><td><code>exclude_nested</code></td>
             <td>bool</td><td>false</td>
             <td class="live">즉시 (<code>parent_id</code> 로 필터)</td>
@@ -942,11 +956,23 @@ value === 6
         <h3>크기 히스토그램 데이터</h3>
         <p>
           별도 API 가 없다. 응답의 <code>colonies</code> 에서 바로 만든다 —
-          x 축은 <code>radius × 2 ÷ 접시 지름</code> 이다. 접시 지름은 응답에
-          없으므로 지금은 이미지 짧은 변의 약 88% 로 근사하거나, 서버에 값을
-          추가해 받는다(별건).
+          x 축은 <b><code>diam_frac</code></b> 을 그대로 쓴다 (1.4.0 신규).
         </p>
-        <pre>const frac = (c.radius * 2) / dishDiameter * 100
+        <p>
+          <b><code>radius × 2 ÷ plate_size_ref</code> 로 계산하지 말 것.</b>
+          이 문서가 1.3.0 까지 그렇게 안내했는데 틀렸다. <code>radius</code> 는
+          표시용이라 크기 게이트가 본 값에 보정(<code>radius_mode</code>,
+          <code>radius_scale</code>)이 붙어 있고, 그 배수가 검출마다 다르다 —
+          실측 39장·2175건에서 <b>중앙 1.39 · p95 2.16 · 최대 7.73</b>. 상수가
+          아니라 나눠서 되돌릴 수 없다. 그래서 히스토그램이 크기 창 슬라이더보다
+          오른쪽으로 밀려 보였다.
+        </p>
+        <p>
+          <code>diam_frac</code> 은 게이트가 <b>실제로 비교한</b> 값이라 슬라이더와
+          같은 축에 놓인다. 대신 화면의 원보다 작다 — 눈으로 잰 지름이 아니다.
+          <b>마커 크기는 계속 <code>radius</code> 를 쓸 것.</b> 둘은 용도가 다르다.
+        </p>
+        <pre>const frac = <b>c.diam_frac</b> * 100
 // 창 밖 막대와 접시 마커를 함께 회색으로</pre>
       </div>
 
@@ -1153,10 +1179,13 @@ value === 6
 
   /* ---- 적용값 ---- */
   function appliedText() {
-    var minT = Math.round(50 - (p.sens - 50) * 0.6);
+    // min_t 는 **여기서 계산하지 않는다.** 서버가 sensitivity 를 매핑한 결과가
+    // 응답의 applied_params 로 그대로 돌아온다. 이 프로젝트는 매핑식을 JS 에
+    // 복제해뒀다가 UI 표시와 서버 실제값이 어긋난 일을 네 번 겪었다.
+    // (이 목업은 서버 없이 열리므로 값 대신 출처를 적는다.)
     var rows = [
       ["sensitivity", p.sens, true],
-      ["min_t", minT + "  ← sensitivity 매핑", false],
+      ["min_t", "← 서버 applied_params 에서 온다", false],
       ["min_diam_frac", (p.dmin / 100).toFixed(3), p.dmin !== DEFAULTS.dmin],
       ["max_diam_frac", (p.dmax / 100).toFixed(3), p.dmax !== DEFAULTS.dmax],
       ["min_roundness", p.round.toFixed(2), p.round !== DEFAULTS.round],

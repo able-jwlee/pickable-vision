@@ -683,27 +683,35 @@ const PRESETS = {
   },
 };
 
-// 감도 슬라이더 → 서버 min_t. app/param_mapping.py 의 sensitivity_to_min_t 와
-// **같은 식이어야 한다.** 어긋나면 UI 힌트가 실제 동작과 다른 값을 말한다.
-// 0~50: 90 → 20,  50~100: 20 → 12   (50 = 서버 기본값 min_t 20)
-function sensitivityToMinT(v) {
-  return v <= 50 ? 90 - (v / 50) * 70 : 20 - ((v - 50) / 50) * 8;
-}
-
-// 실측 곡선 (sample/ 라벨 39장 · 2026-08-07 재측정, 후보 합집합 + 원형도 해제 반영)
+// **매핑식을 여기에 두지 않는다.** 예전에는 sensitivity_to_min_t 를 JS 로
+// 베껴두고 min_t 를 직접 계산했는데, 서버만 고치고 이쪽을 안 고쳐 표시가
+// 어긋난 일을 이 프로젝트가 네 번 겪었다(감도 50 에서 UI 25 · 서버 20).
+//
+// 두 가지로 해결한다.
+//   1) min_t 는 응답의 applied_params 에서 받는다 (lastAppliedMinT)
+//   2) 힌트는 **감도값 자체**를 키로 삼는다 — 실측 앵커가 원래 감도값으로
+//      기록돼 있으므로(43/46/50/81) 변환이 아예 필요 없다
+//
+// 실측 곡선 (sample/ 라벨 39장). 서버 성적이 바뀌면 이 표만 갱신하면 된다.
 const SENSITIVITY_HINTS = [
-  [15, '정밀도 73% · 재현율 77%'],
-  [20, '정밀도 82% · 재현율 76%'],
-  [25, '정밀도 87% · 재현율 73%'],
-  [30, '정밀도 89% · 재현율 71%'],
+  [43, '정밀도 89% · 재현율 71%'],
+  [46, '정밀도 87% · 재현율 73%'],
+  [50, '정밀도 82% · 재현율 76%'],
+  [81, '정밀도 73% · 재현율 77%'],
 ];
+
+// 마지막 검출에서 서버가 실제로 쓴 min_t. 감도를 바꾸면 낡으므로 지운다.
+let lastAppliedMinT = null;
+
 function sensitivityHint(v) {
-  const t = sensitivityToMinT(v);
   let best = SENSITIVITY_HINTS[0];
   for (const h of SENSITIVITY_HINTS) {
-    if (Math.abs(h[0] - t) < Math.abs(best[0] - t)) best = h;
+    if (Math.abs(h[0] - v) < Math.abs(best[0] - v)) best = h;
   }
-  return `min_t ≈ ${t.toFixed(0)} · 실측 ${best[1]}`;
+  const t = lastAppliedMinT === null
+    ? 'min_t 는 검출 후 표시됩니다'
+    : `min_t ${lastAppliedMinT}`;
+  return `${t} · 실측 ${best[1]}`;
 }
 
 // ============================================================
@@ -1059,6 +1067,13 @@ async function runDetect() {
   const data = await resp.json();
   hideLoading();
 
+  // 서버가 실제로 쓴 min_t. 이 값을 표시해야 UI 와 서버가 어긋나지 않는다.
+  const applied = data.applied_params || {};
+  if (typeof applied.min_t === "number") {
+    lastAppliedMinT = Math.round(applied.min_t * 10) / 10;
+    el.hintSens.textContent = sensitivityHint(sliderVal('sensitivity'));
+  }
+
   STATE.imageWidth  = data.width  || STATE.imageWidth;
   STATE.imageHeight = data.height || STATE.imageHeight;
   relayoutOverlays();
@@ -1113,7 +1128,10 @@ document.querySelectorAll('input[type="range"]').forEach(input => {
     const target = document.getElementById(e.target.dataset.target);
     if (target) target.textContent = sliderLabel(field, val);
     markCustom();
-    if (field === 'sensitivity') el.hintSens.textContent = sensitivityHint(val);
+    if (field === 'sensitivity') {
+      lastAppliedMinT = null;   // 새 감도의 min_t 는 아직 서버에 물어보지 않았다
+      el.hintSens.textContent = sensitivityHint(val);
+    }
   });
 });
 
