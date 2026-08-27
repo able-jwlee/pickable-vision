@@ -216,8 +216,14 @@ def _detect_and_score(
     resolved["plate_size_ref"] = stats.get("size_ref", 0.0)
     geom = [
         {"x": x, "y": y, "radius": r, "circularity": c}
-        for x, y, r, c in circles
+        for x, y, r, c, _f in circles
     ]
+    # 크기 창을 역산할 수 있게 게이트가 본 지름을 기준 길이로 나눠 실어 준다.
+    # radius 로는 안 된다 — 표시용 반지름에는 radius_mode·radius_scale 이
+    # 붙어 있어서 비율이 검출마다 다르다(중앙 1.39, p95 2.16, 최대 7.73).
+    _ref = resolved["plate_size_ref"]
+    diam_fracs = [(2.0 * f / _ref) if _ref > 0 else None
+                  for _x, _y, _r, _c, f in circles]
     # 중첩 판정은 검출 경로 밖에서 한다 — NMS 를 건드리지 않아야 옵션을 끈
     # 상태에서 기존 결과가 그대로 나온다는 것을 보장할 수 있다.
     # 콜로니마다 색을 실어 준다. target_color 를 안 줘도 항상 온다 — 프론트가
@@ -262,6 +268,7 @@ def _detect_and_score(
             y=y,
             radius=r,
             circularity=c,
+            diam_frac=diam_fracs[i],
             color=colours[i],
             color_distance=dists[i],
             score=scores[i]["score"],
@@ -269,7 +276,7 @@ def _detect_and_score(
             # find_parents 는 0-기반 인덱스를 주고 id 는 1-기반이다.
             parent_id=None if parents[i] is None else parents[i] + 1,
         )
-        for i, (x, y, r, c) in enumerate(circles)
+        for i, (x, y, r, c, _f) in enumerate(circles)
     ]
     if not resolved["exclude_nested"]:
         return colonies

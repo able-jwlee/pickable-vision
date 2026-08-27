@@ -428,6 +428,12 @@ footer{border-top:1px solid var(--line);padding-top:24px;color:var(--muted);font
         <p class="why">서버가 <code>min_diam_frac</code> 을 판정할 때 쓰는 분모와
           <strong>같은 값</strong>이다. 그래서 화면의 히스토그램 눈금과 실제로 잘리는
           지점이 처음으로 일치한다.</p>
+        <p class="why" style="border-left:3px solid #c2410c;padding-left:10px">
+          <strong>1.4.0 정정.</strong> 분모는 맞았지만 <strong>분자가 틀렸다.</strong>
+          <code>c.radius</code> 는 표시용이라 크기 게이트가 본 값에 보정이 붙어 있고,
+          그 배수가 검출마다 다르다(실측 중앙 1.39 · p95 2.16 · 최대 7.73). 히스토그램은
+          <code>colonies[].diam_frac</code> 을 그대로 쓸 것 — 게이트가 실제로 비교한
+          값이다.</p>
         <div style="margin-top:2px">
           <p class="where" style="margin-bottom:8px">88% 어림의 오차 · 실측 10장</p>
           <div id="errchart"></div>

@@ -156,7 +156,7 @@ def main() -> int:
             # 같은 이미지에 blob 경로도 돌려 나란히 비교한다
             from app.blob_detector import detect_blobs
             b = detect_blobs(img)
-            bt = match([(x * s, y * s) for x, y, _r, _c in b], truth)
+            bt = match([(x * s, y * s) for x, y, _r, _c, _f in b], truth)
             bgt += len(truth); bdet += len(b); btp += bt
             print(f"    {os.path.basename(p):14s} 정답{len(truth):4d} | "
                   f"cellpose {len(centres):4d}/{match(centres, truth):4d} | "

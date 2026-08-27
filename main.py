@@ -27,7 +27,15 @@ from app.api import router
 #     그대로면 오퍼레이터는 고장난 줄 안다. colonies 에서 빼지 않고 pickable 만
 #     내리므로 화면이 "왜 빠졌는지" 를 보여줄 수 있다.
 #   - color_boost 를 target_color 없이 켜면 422. 조용한 무동작을 없앤다.
-API_VERSION = "1.3.0"
+# 1.4.0 (2026-08-27) 크기 축을 화면과 맞춤:
+#   - Colony.diam_frac 추가 — 크기 게이트가 **실제로 비교한** 지름 ÷
+#     plate_size_ref. min/max_diam_frac 슬라이더와 같은 축이다.
+#     프론트가 2*radius/plate_size_ref 로 계산하고 있었는데, radius 에는
+#     radius_mode·radius_scale 보정이 붙어 있어서 게이트 값과 다르다.
+#     그 배수가 상수면 문서로 끝났겠지만 실측(39장·2175건) 중앙 1.39,
+#     p95 2.16, 최대 7.73 으로 검출마다 달라 되돌릴 수 없었다.
+#     기존 필드는 그대로다(추가만).
+API_VERSION = "1.4.0"
 
 DESCRIPTION = """\
 배양 플레이트 이미지에서 콜로니를 검출해 **원본 픽셀 좌표**를 반환한다.

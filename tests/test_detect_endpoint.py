@@ -4,6 +4,7 @@ import cv2
 import numpy as np
 from fastapi.testclient import TestClient
 
+from app import config
 from main import app
 
 client = TestClient(app)
@@ -30,8 +31,8 @@ def test_detect_returns_colonies():
     assert body["count"] >= 3
     first = body["colonies"][0]
     assert set(first) == {
-        "id", "x", "y", "radius", "circularity", "score", "pickable",
-        "parent_id", "color", "color_distance",
+        "id", "x", "y", "radius", "circularity", "diam_frac", "score",
+        "pickable", "parent_id", "color", "color_distance",
     }
     assert body["colonies"][0]["id"] == 1
 
@@ -196,3 +197,46 @@ def test_target_color_rejects_wrong_length():
         r = client.post("/detect", json={"image": _synthetic_b64(),
                                          "target_color": bad})
         assert r.status_code == 422
+
+
+def test_diam_frac_is_on_the_same_axis_as_the_size_window():
+    """`diam_frac` 은 크기 게이트가 **실제로 비교한** 지름 비율이다.
+
+    `min_diam_frac` 을 올리면 남는 것은 모두 그 값 이상이어야 한다. 이것이
+    이 필드를 따로 싣는 이유 전부다 — 프론트가 히스토그램을 그리고 슬라이더를
+    그 위에 올려도 두 축이 어긋나지 않는다.
+    """
+    floor = 0.06
+    resp = client.post("/detect", json={
+        "image": _synthetic_b64(), "mask_walls": False,
+        "min_diam_frac": floor,
+    })
+    body = resp.json()
+    ref = body["applied_params"]["plate_size_ref"]
+    assert body["colonies"], "이 합성 접시에서는 최소 1개가 남아야 한다"
+    for c in body["colonies"]:
+        assert c["diam_frac"] is not None
+        assert c["diam_frac"] >= floor - 1e-6, (
+            f"게이트를 통과했는데 {c['diam_frac']:.4f} < {floor}"
+        )
+        # 표시용 반지름으로 계산하면 이 관계가 깨진다. 그래서 프론트가
+        # 2*radius/plate_size_ref 로 대신 쓰면 안 된다.
+        assert c["diam_frac"] < 2.0 * c["radius"] / ref
+
+
+def test_diam_frac_is_not_derivable_from_radius():
+    """`2 x radius / plate_size_ref` 로 되돌릴 수 없다는 것을 못박는다.
+
+    radius 에는 radius_mode(LoG 와 윤곽 중 큰 쪽) 와 radius_scale 이 붙어
+    있는데, 어느 쪽이 이겼는지가 검출마다 달라 배수가 상수가 아니다.
+    """
+    resp = client.post(
+        "/detect", json={"image": _synthetic_b64(), "mask_walls": False}
+    )
+    body = resp.json()
+    ref = body["applied_params"]["plate_size_ref"]
+    ratios = [(2.0 * c["radius"] / ref) / c["diam_frac"]
+              for c in body["colonies"] if c["diam_frac"]]
+    assert ratios
+    # 하한은 radius_scale 이다. 그보다 작아지면 게이트 값을 덮어썼다는 뜻이다.
+    assert min(ratios) >= config.BLOB_RADIUS_SCALE - 1e-6

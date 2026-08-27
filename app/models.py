@@ -558,6 +558,23 @@ class Colony(BaseModel):
         1.0,
         description="원형도 0~1. 1에 가까울수록 원. 피킹 품질 참고 지표이며 검출 조건은 아니다.",
     )
+    diam_frac: float | None = Field(
+        None,
+        description=(
+            "이 콜로니의 지름 ÷ `plate_size_ref`. **`min_diam_frac`/"
+            "`max_diam_frac` 슬라이더와 같은 축의 값이다** — 크기 창을 "
+            "히스토그램으로 보여주거나 '이 콜로니가 왜 걸러졌나'를 설명할 때 "
+            "이 값을 쓸 것.\n\n"
+            "**`2 x radius / plate_size_ref` 로 계산하면 안 된다.** `radius` 는 "
+            "표시용이라 크기 게이트가 본 값에 보정(`radius_mode`, "
+            "`radius_scale`)이 이미 붙어 있고, 그 배수는 검출마다 다르다 "
+            "(실측 39장·2175건: 중앙 1.39, p95 2.16, 최대 7.73). 상수로 나눠 "
+            "되돌릴 수 없어서 이 필드를 따로 싣는다.\n\n"
+            "그래서 `diam_frac` 은 화면의 원보다 **작다.** 눈으로 잰 지름이 "
+            "아니라 게이트가 비교한 지름이다. 접시를 못 찾아 "
+            "`plate_size_ref` 가 0이면 null."
+        ),
+    )
     score: float = Field(
         0.0,
         description=(

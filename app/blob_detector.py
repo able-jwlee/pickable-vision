@@ -402,7 +402,7 @@ def colony_gate(
     outer_hi: float = 2.1,
     match: np.ndarray | None = None,
     color_boost: float = 0.0,
-) -> list[tuple[float, float, float, float]]:
+) -> list[tuple[float, float, float, float, float]]:
     """콜로니처럼 생긴 후보만 (x, y, radius, circularity)로 반환.
 
     match 는 '오퍼레이터가 찍은 색에 가까울수록 밝은' 맵이다. 주어지면 그 맵에서도
@@ -412,7 +412,7 @@ def colony_gate(
     h, w = gray.shape
     f = gray.astype(np.float32)
     binm_kernel = np.ones((3, 3), np.uint8)
-    kept: list[tuple[float, float, float, float]] = []
+    kept: list[tuple[float, float, float, float, float]] = []
     for x, y, r in cands:
         r = max(2.0, r)
         pad = int(r * 2.2) + 2
@@ -598,12 +598,14 @@ def colony_gate(
         # 한 방식이 무너질 때(콜로니의 밝은 심부만 잡히거나 스케일 선택이
         # 어긋날 때) 다른 방식이 받쳐주므로 최대값을 쓰면 파국적 과소추정이
         # 줄어든다. 그것이 "큰 콜로니에 점만 한 마커"와 NMS 중복의 원인이었다.
+        # 아래 두 보정은 **표시용 반지름만** 건드린다. 마지막 칸(게이트가 본
+        # 반지름)은 그대로 둔다 — 크기 창을 역산할 수 있어야 한다.
         if radius_mode == "max":
-            gx, gy, gr, gc = got
-            got = (gx, gy, max(gr, r), gc)
+            gx, gy, gr, gc, gf = got
+            got = (gx, gy, max(gr, r), gc, gf)
         if radius_scale != 1.0:
-            gx, gy, gr, gc = got
-            got = (gx, gy, gr * radius_scale, gc)
+            gx, gy, gr, gc, gf = got
+            got = (gx, gy, gr * radius_scale, gc, gf)
         kept.append(got)
     return kept
 
@@ -633,7 +635,7 @@ def _judge_level(
     split_area_ratio: float,
     watershed_split: bool,
     size_level: float | None = None,
-) -> tuple[float, float, float, float] | None:
+) -> tuple[float, float, float, float, float] | None:
     """이진화 레벨 하나에서 윤곽을 뽑아 모양 게이트를 통과하면 결과를 반환.
 
     통과하지 못하면 None. 호출부가 여러 레벨을 훑으며 하나라도 통과하는지 본다.
@@ -738,6 +740,12 @@ def _judge_level(
     r_fit = math.sqrt(area / math.pi)
     if r_fit < min_radius or (max_radius > 0 and r_fit > max_radius):
         return None
+    # 크기 게이트가 **실제로 비교한** 반지름. 아래에서 r_fit 은 표시용으로 다시
+    # 커지고, 호출부에서 radius_mode·radius_scale 이 또 붙는다. 그래서 응답의
+    # radius 로는 이 게이트를 역산할 수 없다 — 실측 39장에서 radius/r_gate 가
+    # 중앙 1.393, p95 2.157, 최대 7.73 으로 상수가 아니다. min/max_diam_frac
+    # 슬라이더와 같은 축에 놓이는 값은 이쪽이다.
+    r_gate = r_fit
 
     m = cv2.moments(pick)
     if m["m00"] <= 0:
@@ -761,7 +769,7 @@ def _judge_level(
                 r_fit = max(r_fit, r2)
 
     return (m["m10"] / m["m00"] + x0, m["m01"] / m["m00"] + y0,
-            r_fit, min(circ, 1.0))
+            r_fit, min(circ, 1.0), r_gate)
 
 
 def detect_blobs(
@@ -808,7 +816,7 @@ def detect_blobs(
     # 호출자가 dict 를 주면 검출 중 알아낸 사실을 채워 준다. 반환값에 끼워 넣지
     # 않는 이유는 detector.detect 와 형식이 같아야 하기 때문이다(모듈 docstring).
     stats: dict | None = None,
-) -> list[tuple[float, float, float, float]]:
+) -> list[tuple[float, float, float, float, float]]:
     """콜로니를 검출해 원본 좌표계의 (x, y, radius, circularity) 리스트를 반환.
 
     `detector.detect`와 반환 형식이 같아 scoring/annotate에 그대로 연결된다.
@@ -858,7 +866,8 @@ def detect_blobs(
         )
         if len(probe) >= config.BLOB_SCALE_PROBE_MIN:
             s0 = min(1.0, work_size / max(h, w))
-            med_d = 2.0 * float(np.median([r for _x, _y, r, _c in probe])) * s0
+            med_d = 2.0 * float(
+                np.median([r for _x, _y, r, _c, _f in probe])) * s0
             if med_d > 0:
                 k = config.BLOB_SCALE_TARGET_DIAM / med_d
                 k = min(max(k, 1.0), config.BLOB_SCALE_MAX_UPSCALE)
@@ -934,7 +943,7 @@ def detect_blobs(
         # 픽셀로 되돌려 담는다(size_ref 는 작업 픽셀 단위다).
         stats["size_ref"] = float(size_ref / s) if s > 0 else float(size_ref)
 
-    kept: list[tuple[float, float, float, float]] = []
+    kept: list[tuple[float, float, float, float, float]] = []
     # 극성. None = 양극성 모두 검출 후 병합(기본). True/False 로 고정하면
     # 그 극성만 본다 — 검출이 늘지는 않지만, 틀린 극성의 가짜 blob이 NMS 에서
     # 진짜 콜로니를 억제하고 있다면 고정이 정밀도·재현율을 함께 올릴 수 있다.
@@ -1013,11 +1022,12 @@ def detect_blobs(
 
     # 두 극성이 같은 자리를 잡으면 원형도가 높은 쪽만 남긴다.
     kept.sort(key=lambda t: -t[3])
-    merged: list[tuple[float, float, float, float]] = []
-    for x, y, r, c in kept:
+    merged: list[tuple[float, float, float, float, float]] = []
+    for x, y, r, c, f in kept:
         if all(math.hypot(x - ox, y - oy) >= max(r, orr) * config.BLOB_NMS_FRAC
-               for ox, oy, orr, _ in merged):
-            merged.append((x, y, r, c))
+               for ox, oy, orr, _, _ in merged):
+            merged.append((x, y, r, c, f))
 
     inv = 1.0 / s if s > 0 else 1.0
-    return [(x * inv, y * inv, r * inv, c) for x, y, r, c in merged]
+    return [(x * inv, y * inv, r * inv, c, f * inv)
+            for x, y, r, c, f in merged]
